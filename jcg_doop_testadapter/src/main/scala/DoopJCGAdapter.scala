@@ -50,7 +50,7 @@ object DoopAdapter extends JavaTestAdapter {
 
         val callSitesJson: JsValue = Json.toJson(reachableMe)
 
-        output.write(Json.prettyPrint(callSitesJson))
+        output.write(Json.stringify(callSitesJson))
     }
 
     private def resolveBridgeMethod(

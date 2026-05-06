@@ -23,5 +23,6 @@ result/
 jre.conf
 local.sbt
 */build.properties
+**/build.properties
 /fingerprints
 .*

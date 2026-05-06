@@ -158,7 +158,7 @@ object SootJCGAdapter extends JavaTestAdapter {
             reachableMethods += ReachableMethod(method, callSites)
         }
 
-        output.write(Json.prettyPrint(Json.toJson(ReachableMethods(reachableMethods))))
+        output.write(Json.stringify(Json.toJson(ReachableMethods(reachableMethods))))
 
         G.reset()
 

@@ -149,12 +149,14 @@ object Evaluation {
                 else
                     new BufferedWriter(new FileWriter(cgFile))
 
+            var fw = new FileWriter(cgFile.getPath)
+
             val elapsed =
                 try {
                     adapter.serializeCG(
                         cgAlgo,
                         projectSpec.target(projectsDir).getCanonicalPath,
-                        new FileWriter(cgFile.getPath),
+                        fw,
                         AdapterOptions.makeJavaOptions(
                             projectSpec.main.orNull,
                             projectSpec.allClassPathEntryPaths(projectsDir),
@@ -171,6 +173,8 @@ object Evaluation {
                             e.printStackTrace()
                         }
                         -1
+                } finally {
+                    fw.close()
                 }
 
             System.gc()
