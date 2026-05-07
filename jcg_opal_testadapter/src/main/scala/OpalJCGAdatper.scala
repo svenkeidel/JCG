@@ -91,6 +91,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
         config = config
             .withValue("org.opalj.fpcf.analyses.AllocationSiteBasedPointsToAnalysis.mergeStringConstants", ConfigValueFactory.fromAnyRef(false))
             .withValue("org.opalj.fpcf.analyses.AllocationSiteBasedPointsToAnalysis.mergeClassConstants", ConfigValueFactory.fromAnyRef(false))
+            .withValue("org.opalj.tac.cg.PointsTo.modules", ConfigValueFactory.fromAnyRef("org.opalj.tac.fpcf.analyses.pointsto.ReflectionAllocationsAnalysisScheduler"))
 
         // gather the class files to be loaded
         val cfReader = JavaClassFileReader(using theConfig = config)
