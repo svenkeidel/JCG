@@ -1,6 +1,5 @@
 import java.io.File
 import java.io.FileInputStream
-
 import org.opalj.br
 import org.opalj.br.Annotation
 import org.opalj.br.analyses.Project
@@ -8,6 +7,9 @@ import org.opalj.br.analyses.SomeProject
 import org.opalj.log.GlobalLogContext
 import org.opalj.log.OPALLogger
 import play.api.libs.json.Json
+
+import scala.util.boundary
+import scala.util.boundary.break
 
 /**
  * For a given project and a computed (serialized as json representation of [[ReachableMethods]])
@@ -30,7 +32,7 @@ object CGMatcher {
         parent:              File,
         serializedCallGraph: File,
         verbose:             Boolean              = false
-    ): Assessment = {
+    ): Assessment = boundary {
         if (!verbose)
             OPALLogger.updateLogger(GlobalLogContext, new DevNullLogger())
 
@@ -41,7 +43,7 @@ object CGMatcher {
         )
 
         if(!serializedCallGraph.exists() || serializedCallGraph.length() == 0){
-            return Error;
+            break(Error)
         }
 
         val computedReachableMethods =
@@ -70,7 +72,7 @@ object CGMatcher {
                 )
 
                 if (csAssessment.isUnsound) {
-                    return Unsound;
+                    break(Unsound)
                 }
 
                 val indirectCallAnnotations = AnnotationHelper.indirectCallAnnotations(annotation)
@@ -85,7 +87,7 @@ object CGMatcher {
                 val finalAssessment = csAssessment.combine(icsAssessment)
 
                 if (!finalAssessment.isSound)
-                    return finalAssessment;
+                    break(finalAssessment)
             }
 
         }
@@ -103,7 +105,7 @@ object CGMatcher {
         method:                br.Method,
         directCallAnnotations: Seq[Annotation],
         verbose:               Boolean
-    )(implicit p: SomeProject): Assessment = {
+    )(implicit p: SomeProject): Assessment = boundary {
         var finalAssessment: Assessment = Sound
         for (annotation ← directCallAnnotations) {
             // here we identify call sites only by name and line number, not regarding types
@@ -125,7 +127,7 @@ object CGMatcher {
                         if (!computedTargets.contains(annotatedTgt)) {
                             if (verbose)
                                 println(s"$line:${annotatedMethod.declaringClass}#${annotatedMethod.name}:\t there is no call to $annotatedTgt#$name")
-                            return Unsound;
+                            break(Unsound)
                         } else {
                             if (verbose) println("found it")
                         }
@@ -144,7 +146,7 @@ object CGMatcher {
                     }
                 case _ ⇒
                     // there is no matching call site in the computed call graph
-                    return Unsound;
+                    break(Unsound)
             }
         }
 
@@ -160,7 +162,7 @@ object CGMatcher {
         source:                  br.Method,
         indirectCallAnnotations: Seq[Annotation],
         verbose:                 Boolean
-    )(implicit p: SomeProject): Assessment = {
+    )(implicit p: SomeProject): Assessment = boundary {
         val annotatedSource = convertMethod(source)
         var finalAssessment: Assessment = Sound
         for (annotation ← indirectCallAnnotations) {
@@ -175,7 +177,7 @@ object CGMatcher {
             for (declaringClass ← resolvedTargets) {
                 val annotatedTarget = Method(name, declaringClass, returnType, parameterTypes)
                 if (!callsIndirectly(reachableMethods, annotatedSource, annotatedTarget, verbose))
-                    return Unsound;
+                    break(Unsound)
             }
 
             val prohibitedTargets = AnnotationHelper.getProhibitedTargets(annotation)
@@ -198,7 +200,7 @@ object CGMatcher {
         source:           Method,
         annotatedTarget:  Method,
         verbose:          Boolean
-    ): Boolean = {
+    ): Boolean = boundary {
         var visited: Set[Method] = Set(source)
         var workset: Set[Method] = Set(source)
 
@@ -211,7 +213,7 @@ object CGMatcher {
             for (tgt ← computedCallSites.flatMap(_.targets)) {
                 if (tgt == annotatedTarget) {
                     if (verbose) println(s"Found transitive call $source -> $annotatedTarget")
-                    return true;
+                    break(true)
                 }
 
                 if (!visited.contains(tgt)) {

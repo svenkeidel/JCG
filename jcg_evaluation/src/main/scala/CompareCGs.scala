@@ -116,7 +116,7 @@ object CompareCGs {
             while (cg1Keys.hasNext) {
                 val m1 = cg1Keys.next()
                 if (cg2.contains(m1))
-                    common add m1
+                    common `add` m1
             }
             common
         } else new util.HashSet[Method]()
@@ -282,9 +282,9 @@ object CompareCGs {
 
     private def transitiveHull(method: Method, cg: Map[Method, Set[CallSite]], commonReachableMethods: JHashSet[Method]): (Int, Int) = {
         val reachableMethods = new java.util.HashSet[Method]()
-        reachableMethods add method
+        reachableMethods `add` method
         val nonCommon = new java.util.HashSet[Method]()
-        nonCommon add method
+        nonCommon `add` method
 
         var worklist: mutable.Queue[Method] = mutable.Queue(method)
 
@@ -298,8 +298,8 @@ object CompareCGs {
                 } {
                     if (!reachableMethods.contains(t)) {
                         if (!commonReachableMethods.contains(t))
-                            nonCommon add t
-                        reachableMethods add t
+                            nonCommon `add` t
+                        reachableMethods `add` t
                         worklist enqueue t
                     }
                 }

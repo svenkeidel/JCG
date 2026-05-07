@@ -109,8 +109,8 @@ object SootJCGAdapter extends JavaTestAdapter {
 
         val cg = scene.getCallGraph
 
-        val worklist = mutable.Queue(scene.getEntryPoints.asScala.toSeq: _*)
-        val processed = mutable.Set(worklist.toSeq: _*)
+        val worklist = mutable.Queue(scene.getEntryPoints.asScala.toSeq*)
+        val processed = mutable.Set(worklist.toSeq*)
 
         var reachableMethods = Set.empty[ReachableMethod]
 
