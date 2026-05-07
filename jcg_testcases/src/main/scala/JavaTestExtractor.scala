@@ -51,7 +51,7 @@ object JavaTestExtractor extends TestCaseExtractor {
                 println(compilerArgs.mkString("[DEBUG] Compiler args: \n\n", "\n", "\n\n"))
             }
 
-            compiler.run(null, null, null, compilerArgs: _*)
+            compiler.run(null, null, null, compilerArgs*)
 
             val allClassFiles = FileOperations.listFilesRecursively(bin.getAbsoluteFile, ".class")
 

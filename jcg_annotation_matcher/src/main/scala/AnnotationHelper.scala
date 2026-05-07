@@ -9,7 +9,7 @@ import org.opalj.br.ArrayValue
 import org.opalj.br.ClassValue
 import org.opalj.br.ElementValuePair
 import org.opalj.br.IntValue
-import org.opalj.br.ObjectType
+import org.opalj.br.ClassType
 import org.opalj.br.StringValue
 import org.opalj.br.Type
 import org.opalj.br.VoidType
@@ -23,16 +23,16 @@ import org.opalj.br.analyses.SomeProject
  */
 object AnnotationHelper {
 
-    // ObjectTypes of the annotations:
+    // ClassType of the annotations:
 
     val DirectCallAnnotationType =
-        ObjectType(classOf[DirectCall].getName.replace(".", "/"))
+        ClassType(classOf[DirectCall].getName.replace(".", "/"))
     val DirectCallsAnnotationType =
-        ObjectType(classOf[DirectCalls].getName.replace(".", "/"))
+        ClassType(classOf[DirectCalls].getName.replace(".", "/"))
     val IndirectCallAnnotationType =
-        ObjectType(classOf[IndirectCall].getName.replace(".", "/"))
+        ClassType(classOf[IndirectCall].getName.replace(".", "/"))
     val IndirectCallsAnnotationType =
-        ObjectType(classOf[IndirectCalls].getName.replace(".", "/"))
+        ClassType(classOf[IndirectCalls].getName.replace(".", "/"))
 
     /**
      * Returns all [[DirectCall]] annotations referred by this annotation.

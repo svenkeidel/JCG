@@ -144,7 +144,7 @@ object JellyCallGraphAdapter extends JSTestAdapter {
 
         dataMatch match {
             case Some(m) =>
-                if (debug) println("[DEBUG] DATA", m.group(1))
+                if (debug) println(s"[DEBUG] DATA ${m.group(1)}")
                 ujson.read(m.group(1)) // get the JSON content inside the `{...}`
             case None =>
                 throw new RuntimeException("No JSON data found in the file.")

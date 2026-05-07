@@ -2,12 +2,12 @@ import sbt.Keys.libraryDependencies
 
 ThisBuild / javacOptions ++= Seq("-encoding", "utf8", "-parameters")
 
-ThisBuild / libraryDependencySchemes ++= Seq(
-    "org.scala-lang.modules" %% "scala-xml" % VersionScheme.Always
-)
+//ThisBuild / libraryDependencySchemes ++= Seq(
+//    "org.scala-lang.modules" %% "scala-xml" % VersionScheme.Always
+//)
 
 lazy val commonSettings = Seq(
-    scalaVersion := "2.13.8",
+    scalaVersion := "3.7.3",
     organization := "de.opal-project",
     homepage := Some(url("https://bitbucket.org/delors/jcg")),
     licenses := Seq("BSD-2-Clause" -> url("http://opensource.org/licenses/BSD-2-Clause")),
@@ -15,7 +15,10 @@ lazy val commonSettings = Seq(
     version := "1.0",
     publishMavenStyle := true,
     publishTo := MavenPublishing.publishTo(isSnapshot.value),
-    pomExtra := MavenPublishing.pomNodeSeq()
+    pomExtra := MavenPublishing.pomNodeSeq(),
+    // There is a conflicting dependency between coursier, which depends on scala-xml_2.13 and
+    // opal 7.0, which depends on scala-xml_3. Therefore, we ignore the scala-xml_2.13 dependency here.
+    excludeDependencies += "org.scala-lang.modules" % "scala-xml_2.13",
 )
 
 lazy val jcg_annotations = project.settings(
@@ -28,10 +31,10 @@ lazy val jcg_data_format = project.settings(
     commonSettings,
     name := "JCG Data Format",
     assembly / aggregate := false,
-    libraryDependencies += "com.typesafe.play" %% "play-json" % "2.9.2",
-    libraryDependencies += "io.get-coursier" %% "coursier" % "2.1.8",
-    libraryDependencies += "io.get-coursier" %% "coursier-cache" % "2.1.8",
-    libraryDependencies += "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.12.3"
+    libraryDependencies += ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13),
+    libraryDependencies += ("io.get-coursier" %% "coursier-cache" % "2.1.24").cross(CrossVersion.for3Use2_13),
+    libraryDependencies += "org.playframework" %% "play-json" % "3.0.6",
+    libraryDependencies += "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.21.2"
 )
 
 lazy val jcg_testcases = project.settings(
@@ -45,7 +48,8 @@ lazy val jcg_testcases = project.settings(
 lazy val jcg_annotation_matcher = project.settings(
     commonSettings,
     name := "JCG Annotation Matcher",
-    libraryDependencies += "de.opal-project" %% "bytecode-representation" % "5.0.1-SNAPSHOT",
+    libraryDependencies += "de.opal-project" %% "bytecode-representation" % "7.0.0",
+//    libraryDependencies += "org.scala-lang.modules" %% "scala-xml" % "2.4.0",
     assembly / aggregate := false
 ).dependsOn(jcg_annotations, jcg_testadapter_commons)
 
@@ -56,8 +60,8 @@ lazy val jcg_wala_testadapter = project.settings(
     libraryDependencies += "com.ibm.wala" % "com.ibm.wala.core" % "1.5.7",
     libraryDependencies += "com.ibm.wala" % "com.ibm.wala.util" % "1.5.7",
     libraryDependencies += "com.ibm.wala" % "com.ibm.wala.shrike" % "1.5.7",
-    libraryDependencies += "com.typesafe.play" %% "play-json" % "2.9.2",
-    libraryDependencies += "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.12.3",
+    libraryDependencies += "org.playframework" %% "play-json" % "3.0.6",
+    libraryDependencies += "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.21.2",
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)
@@ -68,7 +72,7 @@ lazy val jcg_soot_testadapter = project.settings(
     resolvers += "soot snapshot" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-snapshot/",
     resolvers += "soot release" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-release/",
     libraryDependencies += "org.soot-oss" % "soot" % "4.4.1",
-    libraryDependencies += "com.typesafe.play" %% "play-json" % "2.9.2",
+    libraryDependencies += "org.playframework" %% "play-json" % "3.0.6",
     aggregate in assembly := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)
@@ -76,8 +80,8 @@ lazy val jcg_soot_testadapter = project.settings(
 lazy val jcg_opal_testadapter = project.settings(
     commonSettings,
     name := "JCG OPAL Test Adapter",
-    libraryDependencies += "de.opal-project" %% "three-address-code" % "5.0.1-SNAPSHOT",
-    libraryDependencies += "com.typesafe.play" %% "play-json" % "2.9.2",
+    libraryDependencies += "de.opal-project" %% "three-address-code" % "7.0.0",
+    libraryDependencies += "org.playframework" %% "play-json" % "3.0.6",
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(
@@ -88,8 +92,8 @@ lazy val jcg_opal_testadapter = project.settings(
 lazy val jcg_doop_testadapter = project.settings(
     commonSettings,
     name := "JCG DOOP Test Adapter",
-    libraryDependencies += "de.opal-project" %% "bytecode-representation" % "5.0.1-SNAPSHOT",
-    libraryDependencies += "com.typesafe.play" %% "play-json" % "2.9.2",
+    libraryDependencies += "de.opal-project" %% "bytecode-representation" % "7.0.0",
+    libraryDependencies += "org.playframework" %% "play-json" % "3.0.6",
     libraryDependencies += "commons-io" % "commons-io" % "2.6",
     assembly / aggregate := false,
     publishArtifact := false
@@ -167,7 +171,7 @@ lazy val jcg_jarvis_testadapter = project.settings(
 lazy val jcg_dynamic_testadapter = project.settings(
     commonSettings,
     name := "JCG Dynamic Test Adapter",
-    libraryDependencies += "de.opal-project" %% "bytecode-representation" % "5.0.1-SNAPSHOT",
+    libraryDependencies += "de.opal-project" %% "bytecode-representation" % "7.0.0",
     assembly / aggregate := false,
     publishArtifact := false,
     Compile / compile := (Compile / compile).dependsOn(buildJVMTIAgent).value
@@ -193,7 +197,7 @@ lazy val jcg_evaluation = project.settings(
     resolvers += "soot snapshot" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-snapshot/",
     resolvers += "soot release" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-release/",
     resolvers += Resolver.mavenLocal,
-    libraryDependencies += "de.opal-project" %% "hermes" % "5.0.1-SNAPSHOT",
+    libraryDependencies += "de.opal-project" %% "hermes" % "7.0.0",
     publishArtifact := false
 ).dependsOn(
     jcg_testcases,
@@ -201,9 +205,9 @@ lazy val jcg_evaluation = project.settings(
     jcg_annotation_matcher,
     jcg_testadapter_commons,
     jcg_wala_testadapter,
-    jcg_seneca_testadapter,
+    // jcg_seneca_testadapter,
     jcg_soot_testadapter,
-    jcg_sootup_testadapter,
+    // jcg_sootup_testadapter,
     jcg_opal_testadapter,
     jcg_doop_testadapter,
     jcg_tai_e_testadapter,

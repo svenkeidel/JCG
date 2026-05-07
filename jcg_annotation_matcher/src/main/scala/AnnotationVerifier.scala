@@ -3,7 +3,7 @@ import java.net.URL
 
 import org.opalj.br
 import org.opalj.br.Annotation
-import org.opalj.br.ObjectType
+import org.opalj.br.ClassType
 import org.opalj.br.analyses.Project
 import org.opalj.br.analyses.SomeProject
 
@@ -145,7 +145,7 @@ object AnnotationVerifier {
             val re = "L([^;]*);".r
             re findFirstMatchIn ct match {
                 case Some(m) ⇒
-                    //assert(p.classHierarchy.isKnown(ObjectType(m.group(1))), s"$ct is no known type")
+                    //assert(p.classHierarchy.isKnown(ClassType(m.group(1))), s"$ct is no known type")
                 case None ⇒
 //                    throw new AssertionError(
 //                        s"Call targets must be given in JVM notation but found $ct"

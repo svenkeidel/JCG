@@ -6,6 +6,7 @@ import coursier.Fetch
 import coursier.maven.MavenRepository
 import coursier.Module
 import coursier.Resolution
+import coursier.ResolutionExtensions
 import coursier.core.ModuleName
 import coursier.core.Organization
 import coursier.core.ResolutionProcess
@@ -40,7 +41,7 @@ case class ProjectSpecification(
      *               root directory.
      */
     def allClassPathEntryFiles(parent: File): Array[File] = {
-        cp.getOrElse(Array.empty).flatMap(_.getLocations.map { location ⇒
+        cp.getOrElse(Array.empty[ClassPathEntry]).flatMap(_.getLocations.map { location ⇒
             if (location.isAbsolute)
                 location
             else

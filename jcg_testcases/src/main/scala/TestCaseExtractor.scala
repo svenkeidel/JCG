@@ -64,7 +64,7 @@ trait TestCaseExtractor {
         reHeaders.findAllIn(lines).matchData.foreach(projectMatchResult => {
             val projectName = projectMatchResult.group("projectName").trim
             if (TestCaseExtractor.debug) {
-                println("[DEBUG] project", projectName)
+                println(s"[DEBUG] project $projectName")
             }
 
             // create Folder for project
