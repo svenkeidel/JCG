@@ -16,9 +16,6 @@ lazy val commonSettings = Seq(
     publishMavenStyle := true,
     publishTo := MavenPublishing.publishTo(isSnapshot.value),
     pomExtra := MavenPublishing.pomNodeSeq(),
-    // There is a conflicting dependency between coursier, which depends on scala-xml_2.13 and
-    // opal 7.0, which depends on scala-xml_3. Therefore, we ignore the scala-xml_2.13 dependency here.
-    excludeDependencies += "org.scala-lang.modules" % "scala-xml_2.13",
 )
 
 lazy val jcg_annotations = project.settings(
@@ -31,8 +28,6 @@ lazy val jcg_data_format = project.settings(
     commonSettings,
     name := "JCG Data Format",
     assembly / aggregate := false,
-    libraryDependencies += ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13),
-    libraryDependencies += ("io.get-coursier" %% "coursier-cache" % "2.1.24").cross(CrossVersion.for3Use2_13),
     libraryDependencies += "org.playframework" %% "play-json" % "3.0.6",
     libraryDependencies += "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.21.2"
 )

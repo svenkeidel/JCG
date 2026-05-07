@@ -1,24 +1,13 @@
 import java.io.File
 
-import coursier.Dependency
-import coursier.cache._
-import coursier.Fetch
-import coursier.maven.MavenRepository
-import coursier.Module
-import coursier.Resolution
-import coursier.ResolutionExtensions
-import coursier.core.ModuleName
-import coursier.core.Organization
-import coursier.core.ResolutionProcess
-import coursier.util.Task.sync
-import coursier.LocalRepositories
-import coursier.util.Gather
-import coursier.util.Task
 import play.api.libs.json.JsPath
 import play.api.libs.json.Json
 import play.api.libs.json.Reads
 import play.api.libs.json.OWrites
 import play.api.libs.json.Writes
+
+import scala.sys.process.*
+import scala.language.postfixOps
 
 /**
  * Specifies a target project.
@@ -110,21 +99,25 @@ object ClassPathEntry {
  */
 case class MavenClassPathEntry(org: String, id: String, version: String) extends ClassPathEntry {
     override def getLocations: Array[File] = {
-        val start = Resolution(Seq(Dependency(Module(Organization(org), ModuleName(id)), version)))
-        val repositories = Seq(LocalRepositories.ivy2Local, MavenRepository("https://repo1.maven.org/maven2"))
-        val fetch = ResolutionProcess.fetch(repositories, Cache.default.fetch)
+        (s"cs fetch --quiet --repository ivy2local --repository https://repo1.maven.org/maven2 $org:$id:$version" !!)
+          .split("\n")
+          .map(File(_))
 
-        import scala.concurrent.ExecutionContext.Implicits.global
-
-        val resolution = start.process.run(fetch).unsafeRun()
-        val r: Seq[Either[ArtifactError, File]] =
-            Gather[Task].gather(
-                resolution.artifacts().map(Cache.default.file(_).run)
-            ).unsafeRun()
-
-        assert(r.forall(_.isRight))
-
-        r.map(_.toOption.get).toArray
+//        val start = Resolution(Seq(Dependency(Module(Organization(org), ModuleName(id)), version)))
+//        val repositories = Seq(LocalRepositories.ivy2Local, MavenRepository("https://repo1.maven.org/maven2"))
+//        val fetch = ResolutionProcess.fetch(repositories, Cache.default.fetch)
+//
+//        import scala.concurrent.ExecutionContext.Implicits.global
+//
+//        val resolution = start.process.run(fetch).unsafeRun()
+//        val r: Seq[Either[ArtifactError, File]] =
+//            Gather[Task].gather(
+//                resolution.artifacts().map(Cache.default.file(_).run)
+//            ).unsafeRun()
+//
+//        assert(r.forall(_.isRight))
+//
+//        r.map(_.toOption.get).toArray
     }
 }
 

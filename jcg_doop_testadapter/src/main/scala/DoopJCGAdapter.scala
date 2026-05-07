@@ -4,7 +4,6 @@ import java.io.Writer
 import java.net.URL
 import java.nio.file.Files
 
-import scala.collection.compat.immutable
 import scala.collection.mutable
 import scala.io.Source
 import scala.sys.process.Process
@@ -80,7 +79,7 @@ object DoopAdapter extends JavaTestAdapter {
         assert(tgts.nonEmpty)
         val firstTgt = toMethod(tgts.head)
         val tgtReturnType = ReturnType(firstTgt.returnType)
-        val tgtParamTypes: FieldTypes = immutable.ArraySeq(firstTgt.parameterTypes.map(FieldType.apply)*)
+        val tgtParamTypes: FieldTypes = scala.collection.immutable.ArraySeq(firstTgt.parameterTypes.map(FieldType.apply)*)
         val tgtMD = MethodDescriptor(tgtParamTypes, tgtReturnType)
         val split = declaredTgt.split("""\.""")
         val declaredType = s"L${split.slice(0, split.size - 1).mkString("/")};"
@@ -134,7 +133,7 @@ object DoopAdapter extends JavaTestAdapter {
                 case Some(cf) ⇒
                     implicit val classFile: ClassFile = cf
                     val returnType = ReturnType(callerMethod.returnType)
-                    val parameterTypes: FieldTypes = scala.collection.compat.immutable.ArraySeq(callerMethod.parameterTypes.map(FieldType.apply)*)
+                    val parameterTypes: FieldTypes = scala.collection.immutable.ArraySeq(callerMethod.parameterTypes.map(FieldType.apply)*)
                     val md = MethodDescriptor(parameterTypes, returnType)
 
                     cf.findMethod(callerMethod.name, md) match {
