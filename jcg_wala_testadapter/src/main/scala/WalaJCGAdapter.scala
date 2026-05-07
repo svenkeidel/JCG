@@ -20,7 +20,7 @@ import com.ibm.wala.ipa.cha.ClassHierarchyFactory
 import com.ibm.wala.types.MethodReference
 import com.ibm.wala.types.TypeReference
 import com.ibm.wala.util.NullProgressMonitor
-import com.ibm.wala.util.config.AnalysisScopeReader
+import com.ibm.wala.core.util.config.AnalysisScopeReader
 
 object WalaJCGAdapter extends JavaTestAdapter {
 
@@ -62,7 +62,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
             new File(cl.getResource("Java60RegressionExclusions.txt").getFile)
         }
 
-        val scope = AnalysisScopeReader.makeJavaBinaryAnalysisScope(cp, ex)
+        val scope = AnalysisScopeReader.instance.makeJavaBinaryAnalysisScope(cp, ex)
 
         // we do not need the wala.properties anymore!
         walaPropertiesFile.delete()
