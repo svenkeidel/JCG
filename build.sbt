@@ -85,6 +85,8 @@ lazy val jcg_sootup_testadapter = project.settings(
     libraryDependencies += "org.soot-oss" % "sootup.java.bytecode.frontend" % "2.0.0",
     libraryDependencies += "org.soot-oss" % "sootup.jimple.frontend" % "2.0.0",
     libraryDependencies += "org.soot-oss" % "sootup.callgraph" % "2.0.0",
+    libraryDependencies += "org.soot-oss" % "sootup.qilin" % "2.0.0",
+
     libraryDependencies += "org.playframework" %% "play-json" % "3.0.6",
     aggregate in assembly := false,
     publishArtifact := false

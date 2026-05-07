@@ -103,8 +103,8 @@ object SootUpJCGAdapter extends JavaTestAdapter {
 
         val after = System.nanoTime
 
-        val worklist = mutable.Queue(entrypoints.toSeq: _*)
-        val processed = mutable.Set(worklist.toSeq: _*)
+        val worklist = mutable.Queue(entrypoints.toSeq*)
+        val processed = mutable.Set(worklist.toSeq*)
 
         var reachableMethods = Set.empty[ReachableMethod]
 
