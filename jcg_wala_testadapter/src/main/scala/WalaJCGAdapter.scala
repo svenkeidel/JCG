@@ -1,11 +1,10 @@
-
 import java.io.File
 import java.io.PrintWriter
 import java.io.Writer
 import java.util
 import java.util.stream.Collectors
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.core.{JsonFactory, JsonGenerator}
@@ -85,16 +84,16 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
         val cg =
             if (algorithm.contains("0-CFA")) {
-                val ncfaBuilder = Util.makeZeroCFABuilder(JAVA, options, cache, classHierarchy, scope)
+                val ncfaBuilder = Util.makeZeroCFABuilder(JAVA, options, cache, classHierarchy)
                 ncfaBuilder.makeCallGraph(options)
             } else if (algorithm.contains("0-1-CFA")) {
-                val cfaBuilder = Util.makeZeroOneCFABuilder(JAVA, options, cache, classHierarchy, scope)
+                val cfaBuilder = Util.makeZeroOneCFABuilder(JAVA, options, cache, classHierarchy)
                 cfaBuilder.makeCallGraph(options)
             } else if (algorithm.contains("1-CFA")) {
-                val cfaBuilder = Util.makeNCFABuilder(1, options, cache, classHierarchy, scope)
+                val cfaBuilder = Util.makeNCFABuilder(1, JAVA, options, cache, classHierarchy)
                 cfaBuilder.makeCallGraph(options)
             } else if (algorithm.contains("RTA")) {
-                val rtaBuilder = Util.makeRTABuilder(options, cache, classHierarchy, scope)
+                val rtaBuilder = Util.makeRTABuilder(options, cache, classHierarchy)
                 rtaBuilder.makeCallGraph(options, new NullProgressMonitor)
             } else if (algorithm.contains("CHA")) {
                 import com.ibm.wala.ipa.callgraph.cha.CHACallGraph
