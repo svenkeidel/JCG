@@ -80,7 +80,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
                     ConfigValueFactory.fromIterable(
                         (
                             (baseConfig.getObjectList("org.opalj.br.analyses.cg.InitialEntryPointsKey.entryPoints").asScala :+
-                                ConfigValueFactory.fromMap(Map("declaringClass" -> mainClass.replace('.', '/'), "name" -> "main").asJava))
+                                ConfigValueFactory.fromMap(Map("declaring-class" -> mainClass.replace('.', '/'), "name" -> "main").asJava))
                         ).asJava
                     )
                 ).withValue(

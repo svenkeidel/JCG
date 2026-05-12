@@ -24,7 +24,6 @@ case class JCGConfig(
     projectFilter:   String            = "",
     algorithmFilter: String            = "",
     timeout:         Int               = -1,
-    runHermes:       Boolean           = false,
     pseval:          Boolean           = false,
     excludeJDK:      Boolean           = false,
     runAnalyses:     Boolean           = true,
@@ -50,10 +49,6 @@ object ConfigParser {
             OParser.sequence(
                 programName("Java Call Graph Tests"),
                 head("JCG", "0.4.0"),
-                opt[Unit]('h', "runHermes")
-                    .action((x, c) => c.copy(runHermes = true))
-                    .text("Hermes will be run on the target project")
-                    .optional(),
                 opt[File]('i', "inputDir")
                     .action((dir, c) => c.copy(inputDir = dir))
                     .text("Defines the directory with the configuration files for the input projects.")

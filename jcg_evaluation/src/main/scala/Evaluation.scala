@@ -13,7 +13,6 @@ import org.opalj.br.MethodDescriptor
 
 object Evaluation {
 
-    private var runHermes = false
     private var projectSpecificEvaluation = false
     private var excludeJDK = false
     private var runAnalyses = true
@@ -33,17 +32,6 @@ object Evaluation {
 
         val jreLocations = EvaluationHelper.getJRELocations(config.JRE_LOCATIONS_FILE)
 
-        if (runHermes) {
-            TestCaseHermesJsonExtractor.performHermesRun(
-                projectsDir,
-                jreLocations,
-                config,
-                new File(FINGERPRINT_DIR),
-                allQueries,
-                projectSpecificEvaluation
-            )
-        }
-
         if (runAnalyses) {
             val resultsDir = new File(config.OUTPUT_DIR_PATH)
             resultsDir.mkdirs()
@@ -54,7 +42,6 @@ object Evaluation {
 
     private def parseArguments(args: Array[String]): Unit = {
         args.sliding(1, 1).toList.collect {
-            case Array("--hermes")           => runHermes = true
             case Array("--project-specific") => projectSpecificEvaluation = true
             case Array("--exclude-jdk")      => excludeJDK = true
             case Array("--all-queries")      => allQueries = true
@@ -74,13 +61,6 @@ object Evaluation {
         if (projectSpecificEvaluation) {
             assert(runAnalyses, "`--analyze` must be set to true on `--project-specific true`")
             assert(FINGERPRINT_DIR.nonEmpty, "no fingerprint directory specified")
-        }
-
-        if (runHermes) {
-            assert(
-                FINGERPRINT_DIR.nonEmpty || allQueries,
-                "hermes requires the fingerprints or `--all-queries` must be set"
-            )
         }
     }
 
