@@ -120,23 +120,19 @@ public class Tai_e_TestAdapterImpl {
 
         long start = System.nanoTime();
 
-        String runnerDir = System.getenv("TAIE_RUNNER_DIR");
-        if (runnerDir == null) {
-            throw new IllegalStateException("TAIE_RUNNER_DIR env variable not set");
-        }
+        Path runnerDir = Files.createTempDirectory("tai-e");
 
         // Generate callgraph
         long processed = 0;
         File inputFile = new File(inputDirPath); // inputDirPath is the single .apk or .jar file that we want to
                                                  // generate the CG for
         String testCaseName = readTestCaseName(inputFile);
-        Path cgDir = Paths.get(runnerDir, "output-cgs", algorithm, testCaseName); // where to write the intermediate
+        Path cgDir = runnerDir.resolve("output-cgs", algorithm, testCaseName); // where to write the intermediate
                                                                                   // results from Taie before reading
                                                                                   // and parsing them
         processed += generateCGforFile(
                 inputFile,
                 algorithm,
-                runnerDir,
                 cgDir,
                 mainClass,
                 classPath,
@@ -190,7 +186,6 @@ public class Tai_e_TestAdapterImpl {
     private long generateCGforFile(
             File inputFile,
             String algorithm,
-            String runnerDir,
             Path outDir,
             String mainClass,
             String[] classPath,
@@ -204,17 +199,11 @@ public class Tai_e_TestAdapterImpl {
 
 
         // Generate configuration file from template
-        String algoTaieName = null;
-        switch (algorithm.toUpperCase()) {
-            case "CHA":
-                algoTaieName = "cha";
-                break;
-            case "PTA":
-                algoTaieName = "pta";
-                break;
-            default:
-                throw new RuntimeException("Invalid algorithm: " + algorithm);
-        }
+        String algoTaieName = switch (algorithm.toUpperCase()) {
+            case "CHA" -> "cha";
+            case "PTA" -> "pta";
+            default -> throw new RuntimeException("Invalid algorithm: " + algorithm);
+        };
 
         // Execute analysis process
         ArrayList<String> command = new ArrayList<>(Arrays.asList(
@@ -341,38 +330,18 @@ public class Tai_e_TestAdapterImpl {
             javaType = javaType.substring(0, javaType.length() - 2);
         }
 
-        String base;
-        switch (javaType) {
-            case "byte":
-                base = "B";
-                break;
-            case "char":
-                base = "C";
-                break;
-            case "double":
-                base = "D";
-                break;
-            case "float":
-                base = "F";
-                break;
-            case "int":
-                base = "I";
-                break;
-            case "long":
-                base = "J";
-                break;
-            case "short":
-                base = "S";
-                break;
-            case "boolean":
-                base = "Z";
-                break;
-            case "void":
-                base = "V";
-                break;
-            default:
-                base = "L" + javaType.replace('.', '/') + ";";
-        }
+        String base = switch (javaType) {
+            case "byte" -> "B";
+            case "char" -> "C";
+            case "double" -> "D";
+            case "float" -> "F";
+            case "int" -> "I";
+            case "long" -> "J";
+            case "short" -> "S";
+            case "boolean" -> "Z";
+            case "void" -> "V";
+            default -> "L" + javaType.replace('.', '/') + ";";
+        };
 
         return "[".repeat(dims) + base;
     }
