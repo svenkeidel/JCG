@@ -286,7 +286,7 @@ object DoopAdapter extends JavaTestAdapter {
 
         assert(algorithm == "context-insensitive")
 
-        var args = Array("./doop", "-a", "context-insensitive", "-t", "1440", "--platform", "java_8", "-i", inputDirPath) ++ classPath
+        var args = Array("./bin/doop", "-a", "context-insensitive", "-t", "1440", "--platform", "java_8", "-i", inputDirPath) ++ classPath
         if (analyzeJDK) {
            args ++= JRELocation.getAllJREJars(JDKPath).map(_.getCanonicalPath)
         }
@@ -296,7 +296,7 @@ object DoopAdapter extends JavaTestAdapter {
         if (mainClass != null)
             args ++= Array("--main", mainClass)
 
-        val status = Process(Array("./doop", "-h"), Some(doopHome)).!
+        val status = Process(Array("./bin/doop", "-h"), Some(doopHome)).!
         if (status != 0)
             throw new RuntimeException("failed to run doop")
 
