@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import org.apache.commons.io.FileUtils;
 
 public class Tai_e_TestAdapterImpl {
     // ---- JCG Adapter: TOOL-INDEPENDENT FORMAT ----
@@ -122,57 +123,61 @@ public class Tai_e_TestAdapterImpl {
 
         Path runnerDir = Files.createTempDirectory("tai-e");
 
-        // Generate callgraph
-        long processed = 0;
-        File inputFile = new File(inputDirPath); // inputDirPath is the single .apk or .jar file that we want to
-                                                 // generate the CG for
-        String testCaseName = readTestCaseName(inputFile);
-        Path cgDir = runnerDir.resolve("output-cgs", algorithm, testCaseName); // where to write the intermediate
-                                                                                  // results from Taie before reading
-                                                                                  // and parsing them
-        processed += generateCGforFile(
-                inputFile,
-                algorithm,
-                cgDir,
-                mainClass,
-                classPath,
-                JDKPath,
-                analyzeJDK);
-        System.out.printf("------ Wrote %d callgraphs ------\n", processed);
+        try {
 
-        // Read reachable methods
-        Path reachableMethodsPath = cgDir.resolve("reachable-methods.txt");
-        Set<Method> allMethods = Files.readAllLines(reachableMethodsPath).stream()
-                .map(this::parseMethodSignature)
-                .collect(Collectors.toSet());
+            // Generate callgraph
+            File inputFile = new File(inputDirPath); // inputDirPath is the single .apk or .jar file that we want to
+                                                     // generate the CG for
+            String testCaseName = readTestCaseName(inputFile);
+            Path cgDir = runnerDir.resolve("output-cgs", algorithm, testCaseName); // where to write the intermediate
+                                                                                      // results from Taie before reading
+                                                                                      // and parsing them
+            generateCGforFile(
+                    inputFile,
+                    algorithm,
+                    cgDir,
+                    mainClass,
+                    classPath,
+                    JDKPath,
+                    analyzeJDK);
 
-        // Parse call-graph.dot
-        Map<String, String> nodeMap = parseDotNodes(cgDir.resolve("call-graph.dot"));
-        Map<Method, Map<CallSiteKey, Set<Method>>> callSitesMap = parseDotEdges(cgDir.resolve("call-graph.dot"),
-                nodeMap);
+            // Read reachable methods
+            Path reachableMethodsPath = cgDir.resolve("reachable-methods.txt");
+            Set<Method> allMethods = Files.readAllLines(reachableMethodsPath).stream()
+                    .map(this::parseMethodSignature)
+                    .collect(Collectors.toSet());
 
-        // Build ReachableMethods structure
-        Set<ReachableMethod> reachableMethods = new HashSet<>();
-        for (Method method : allMethods) {
-            Set<CallSite> sites = new HashSet<>();
-            if (callSitesMap.containsKey(method)) {
-                for (var entry : callSitesMap.get(method).entrySet()) {
-                    sites.add(new CallSite(
-                            entry.getKey().declaredTarget,
-                            entry.getKey().line,
-                            null, // pc not required in final format
-                            entry.getValue()));
+            // Parse call-graph.dot
+            Map<String, String> nodeMap = parseDotNodes(cgDir.resolve("call-graph.dot"));
+            Map<Method, Map<CallSiteKey, Set<Method>>> callSitesMap = parseDotEdges(cgDir.resolve("call-graph.dot"),
+                    nodeMap);
+
+            // Build ReachableMethods structure
+            Set<ReachableMethod> reachableMethods = new HashSet<>();
+            for (Method method : allMethods) {
+                Set<CallSite> sites = new HashSet<>();
+                if (callSitesMap.containsKey(method)) {
+                    for (var entry : callSitesMap.get(method).entrySet()) {
+                        sites.add(new CallSite(
+                                entry.getKey().declaredTarget,
+                                entry.getKey().line,
+                                null, // pc not required in final format
+                                entry.getValue()));
+                    }
                 }
+                reachableMethods.add(new ReachableMethod(method, sites));
             }
-            reachableMethods.add(new ReachableMethod(method, sites));
+
+            // Serialize the ReachableMethods object to JSON
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            output.write(gson.toJson(new ReachableMethods(reachableMethods)));
+            output.flush();
+
+            return System.nanoTime() - start;
+
+        } finally {
+            FileUtils.deleteDirectory(runnerDir.toFile());
         }
-
-        // Serialize the ReachableMethods object to JSON
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();
-        output.write(gson.toJson(new ReachableMethods(reachableMethods)));
-        output.flush();
-
-        return System.nanoTime() - start;
     }
 
     private String readTestCaseName(File inputFile) {
@@ -213,22 +218,15 @@ public class Tai_e_TestAdapterImpl {
                 "-scope", "ALL",
                 "-a", "cg=algorithm:" + algoTaieName + ";dump:true;dump-methods:true",
                 "--output-dir", outDir.toString()));
-        for (String cp : classPath) {
-            command.add("--class-path");
-            command.add(cp);
-        }
 
-        // path to <...>/JCG/jcg_annotations/src/main/java
-        // otherwise we get:
-        // java.lang.RuntimeException: couldn't find class:
-        // lib.annotations.callgraph.IndirectCalls
-        String jcgPath = System.getenv("JCG_ANNOTATIONS_PATH");
-        if (jcgPath == null || jcgPath.isEmpty()) {
-            throw new RuntimeException("JCG_ANNOTATIONS_PATH env variable not set");
-        }
+        String annotations = lib.annotations.callgraph.IndirectCalls.class.getProtectionDomain().getCodeSource().getLocation().getPath().toString();
+        ArrayList<String> classPathArray = new ArrayList<>(Arrays.asList(classPath));
+        classPathArray.add(annotations);
+
         command.add("--class-path");
-        command.add(jcgPath);
+        command.add(String.join(":", classPathArray));
 
+        System.out.println(command);
         pascal.taie.Main.main(command.toArray(new String[0]));
 
         System.out.printf("------ Finished generating CG for input file: %s ------\n", testCaseName);

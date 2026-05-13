@@ -129,9 +129,10 @@ lazy val jcg_tai_e_testadapter = project.settings(
     commonSettings,
     name := "JCG Tai-E Test Adapter",
     libraryDependencies += "net.pascal-lab" % "tai-e" % "0.5.2",
+    libraryDependencies += "commons-io" % "commons-io" % commonsIoVersion,
     assembly / aggregate := false,
     publishArtifact := false
-).dependsOn(jcg_testadapter_commons)
+).dependsOn(jcg_testadapter_commons, jcg_annotations)
 
 lazy val jcg_js_callgraph_testadapter = project.settings(
     commonSettings,
