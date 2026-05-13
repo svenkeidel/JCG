@@ -296,7 +296,7 @@ object DoopAdapter extends JavaTestAdapter {
         if (mainClass != null)
             args ++= Array("--main", mainClass)
 
-        val status = Process(Array("./gradlew", "tasks"), Some(doopHome)).!
+        val status = Process(Array("./doop", "-h"), Some(doopHome)).!
         if (status != 0)
             throw new RuntimeException("failed to run doop")
 
