@@ -127,10 +127,8 @@ lazy val jcg_doop_testadapter = project.settings(
 
 lazy val jcg_tai_e_testadapter = project.settings(
     commonSettings,
-    name := "JCG ValueCG Test Adapter",
-    resolvers += "soot snapshot" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-snapshot/",
-    resolvers += "soot release" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-release/",
-    libraryDependencies += "com.google.code.gson" % "gson" % "2.14.0",
+    name := "JCG Tai-E Test Adapter",
+    libraryDependencies += "net.pascal-lab" % "tai-e" % "0.5.2",
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)

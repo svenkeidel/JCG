@@ -202,11 +202,6 @@ public class Tai_e_TestAdapterImpl {
         outDir = outDir.toAbsolutePath();
         Files.createDirectories(outDir);
 
-        // Validate runnerDir contains Tai-e JAR
-        Path jarPath = Paths.get(runnerDir, "tai-e-all-0.5.1.jar");
-        if (!Files.exists(jarPath)) {
-            throw new RuntimeException("Tai-e JAR not found at: " + jarPath);
-        }
 
         // Generate configuration file from template
         String algoTaieName = null;
@@ -222,9 +217,7 @@ public class Tai_e_TestAdapterImpl {
         }
 
         // Execute analysis process
-        List<String> command = new ArrayList<>(Arrays.asList(
-                "java",
-                "-jar", "tai-e-all-0.5.1.jar",
+        ArrayList<String> command = new ArrayList<>(Arrays.asList(
                 "--class-path", inputFile.getAbsolutePath(),
                 "--main-class", mainClass,
                 "-java", "8",
@@ -247,23 +240,7 @@ public class Tai_e_TestAdapterImpl {
         command.add("--class-path");
         command.add(jcgPath);
 
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(new File(runnerDir));
-        pb.redirectErrorStream(true);
-
-        // debug
-        System.out.println("Executing command: " + String.join(" ", pb.command()));
-
-        Process process = pb.start();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream()))) {
-            reader.lines().forEach(System.out::println);
-        }
-
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            throw new RuntimeException("Analysis failed with exit code: " + exitCode);
-        }
+        pascal.taie.Main.main(command.toArray(new String[0]));
 
         System.out.printf("------ Finished generating CG for input file: %s ------\n", testCaseName);
         System.out.printf("------ Files written: ------\n");
