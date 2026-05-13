@@ -66,6 +66,14 @@ lazy val jcg_wala_testadapter = project.settings(
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)
 
+//lazy val jcg_seneca_testadapter = project.settings(
+//    commonSettings,
+//    name := "JCG Seneca Test Adapter",
+//    libraryDependencies += "edu.rit.se.design" % "seneca" % "1.0",
+//    assembly / aggregate := false,
+//    publishArtifact := false
+//).dependsOn(jcg_testadapter_commons, jcg_wala_testadapter)
+
 lazy val jcg_soot_testadapter = project.settings(
     commonSettings,
     name := "JCG Soot Test Adapter",
