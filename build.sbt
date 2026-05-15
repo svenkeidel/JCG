@@ -134,6 +134,15 @@ lazy val jcg_tai_e_testadapter = project.settings(
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons, jcg_annotations)
 
+lazy val jcg_valuecg_testadapter = project.settings(
+    commonSettings,
+    name := "JCG ValueCG Test Adapter",
+    libraryDependencies += "commons-io" % "commons-io" % commonsIoVersion,
+    libraryDependencies += "com.google.code.gson" % "gson" % "2.14.0",
+    assembly / aggregate := false,
+    publishArtifact := false
+).dependsOn(jcg_testadapter_commons, jcg_annotations)
+
 lazy val jcg_js_callgraph_testadapter = project.settings(
     commonSettings,
     name := "JCG js-callgraph Test Adapter",
@@ -233,6 +242,7 @@ lazy val jcg_evaluation = project.settings(
     jcg_opal_testadapter,
     jcg_doop_testadapter,
     jcg_tai_e_testadapter,
+    jcg_valuecg_testadapter,
     jcg_js_callgraph_testadapter,
     jcg_jelly_testadapter,
     jcg_tajs_testadapter,
