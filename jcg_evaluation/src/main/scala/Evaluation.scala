@@ -124,19 +124,17 @@ object Evaluation {
                 cgFile.delete()
 
             val output =
-                if (cgFile.getName.endsWith(".zip") || cgFile.getName.endsWith(".gz"))
+                if (config.COMPRESS)
                     new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(cgFile)))
                 else
                     new BufferedWriter(new FileWriter(cgFile))
-
-            var fw = new FileWriter(cgFile.getPath)
 
             val elapsed =
                 try {
                     adapter.serializeCG(
                         cgAlgo,
                         projectSpec.target(projectsDir).getCanonicalPath,
-                        fw,
+                        output,
                         AdapterOptions.makeJavaOptions(
                             projectSpec.main.orNull,
                             projectSpec.allClassPathEntryPaths(projectsDir),
@@ -154,7 +152,7 @@ object Evaluation {
                         }
                         -1
                 } finally {
-                    fw.close()
+                    output.close()
                 }
 
             System.gc()

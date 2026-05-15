@@ -11,10 +11,10 @@ class CommonEvaluationConfig(
     val EVALUATION_ADAPTERS:     List[TestAdapter],
     val PROJECT_PREFIX_FILTER:   String,
     val ALGORITHM_PREFIX_FILTER: String,
-    val ZIP:                     Boolean
+    val COMPRESS:                Boolean
 ) {
     val JRE_LOCATIONS_FILE = "jre.conf"
-    val SERIALIZATION_FILE_NAME = if (ZIP) "cg.zip" else "cg.json"
+    val SERIALIZATION_FILE_NAME = if (COMPRESS) "cg.gz" else "cg.json"
 }
 
 case class JCGConfig(
@@ -141,7 +141,7 @@ object CommonEvaluationConfig {
         var DEBUG = false
         var OUTPUT_DIR_PATH = ""
         var INPUT_DIR_PATH = ""
-        var ZIP = false
+        var COMPRESS = false
 
         var EVALUATION_ADAPTERS = List.empty[JavaTestAdapter]
 
@@ -169,7 +169,7 @@ object CommonEvaluationConfig {
 
         args.sliding(1, 1).toList.collect {
             case Array("--debug") ⇒ DEBUG = true
-            case Array("--zip") ⇒ ZIP = true
+            case Array("--compress") ⇒ COMPRESS = true
         }
 
         assert(INPUT_DIR_PATH.nonEmpty, "no input directory specified")
@@ -186,7 +186,7 @@ object CommonEvaluationConfig {
             if (EVALUATION_ADAPTERS.isEmpty) EvaluationHelper.ALL_JAVA_ADAPTERS else EVALUATION_ADAPTERS,
             PROJECT_PREFIX_FILTER,
             ALGORITHM_PREFIX_FILTER,
-            ZIP
+            COMPRESS
         )
     }
 }
