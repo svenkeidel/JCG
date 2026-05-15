@@ -79,6 +79,7 @@ lazy val jcg_soot_testadapter = project.settings(
     name := "JCG Soot Test Adapter",
     resolvers += "soot snapshot" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-snapshot/",
     resolvers += "soot release" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-release/",
+    resolvers += "Google Maven" at "https://maven.google.com/",
     libraryDependencies += "org.soot-oss" % "soot" % "4.7.1",
     libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
     aggregate in assembly := false,

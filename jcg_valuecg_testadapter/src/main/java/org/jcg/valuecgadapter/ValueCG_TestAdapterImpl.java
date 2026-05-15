@@ -343,11 +343,12 @@ public class ValueCG_TestAdapterImpl {
 		    configContent += "\n\nJavaAnalyzer.EntryPoint=" + "<Entrypoint: void main(java.lang.String[])>";
 		}*/
 
-		Files.write(Paths.get(runnerDir, "server.conf"), configContent.getBytes());
+		Path serverConf = outDir.resolve("server.conf");
+
+		Files.write(serverConf, configContent.getBytes());
 
 		// Execute analysis process
-		ProcessBuilder pb = new ProcessBuilder("./AnalysisStandaloneRunner", "--configfile", "server.conf",
-				inputFile.getAbsolutePath());
+		ProcessBuilder pb = new ProcessBuilder("./AnalysisStandaloneRunner", "--configfile", serverConf.toString(),	inputFile.getAbsolutePath());
 		pb.directory(new File(runnerDir));
 		pb.redirectErrorStream(true);
 
