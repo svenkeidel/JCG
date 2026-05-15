@@ -21,6 +21,8 @@ import java.util.Set;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
+import org.apache.commons.io.FileUtils;
+
 public class ValueCG_TestAdapterImpl {
 
 	public static final String ALGO_PRECISE = "precise";
@@ -164,13 +166,17 @@ public class ValueCG_TestAdapterImpl {
 		File inputFile = new File(inputDirPath); // inputDirPath is the single .apk or .jar file that we want to
 													// generate the CG for
 		String testCaseName = readTestCaseName(inputFile);
-		Path cgDir = Paths.get(runnerDir, "output-cgs", algorithm, testCaseName);
-		processed += generateCGforFile(inputFile, algorithm, runnerDir, configDir, cgDir, mainClass, classPath, JDKPath,
-				analyzeJDK);
-		System.out.printf("------ Wrote %d callgraphs ------\n", processed);
+
+		Path outDir = Files.createTempDirectory("output-cgs");
+		Path cgDir = outDir.resolve(algorithm, testCaseName);
 
 		// Read and convert generated callgraph files
 		try {
+
+			processed += generateCGforFile(inputFile, algorithm, runnerDir, configDir, cgDir, mainClass, classPath, JDKPath,
+					analyzeJDK);
+			System.out.printf("------ Wrote %d callgraphs ------\n", processed);
+
 			Path cgFile = Files.list(cgDir)
 					.filter(p -> p.toString().endsWith(".json") || p.toString().endsWith(".json.gz")).findFirst()
 					.orElseThrow(() -> new IOException("CG file not found for " + testCaseName));
@@ -178,35 +184,6 @@ public class ValueCG_TestAdapterImpl {
 			SerializedCallgraph scg = cgFile.toString().endsWith(".gz")
 					? SerializedCallgraph.readFromFileCompressed(cgFile.toFile())
 					: SerializedCallgraph.readFromFile(cgFile.toFile());
-
-			System.out.println("\n=== RAW EDGES before ===");
-			for (int i = 0; i < scg.edges.size(); i++) {
-				Edge edge = scg.edges.get(i);
-				System.out.printf("Edge %d:\n", i);
-				System.out.println("  Source: " + edge.sourceMethod);
-				System.out.println("  Target: " + edge.targetMethod);
-				System.out.println("  Statement: " + edge.sourceStatement);
-				System.out.println("  Kind: " + edge.kind);
-				System.out.println("  lineNumber: " + edge.lineNumber);
-				System.out.println("  DeclaringClasses: " + edge.declaringClasses);
-				System.out.println();
-			}
-
-			// scg.removeClinits();
-			// scg.removeAndroidSystem();
-
-			System.out.println("\n=== RAW EDGES after ===");
-			for (int i = 0; i < scg.edges.size(); i++) {
-				Edge edge = scg.edges.get(i);
-				System.out.printf("Edge %d:\n", i);
-				System.out.println("  Source: " + edge.sourceMethod);
-				System.out.println("  Target: " + edge.targetMethod);
-				System.out.println("  Statement: " + edge.sourceStatement);
-				System.out.println("  Kind: " + edge.kind);
-				System.out.println("  lineNumber: " + edge.lineNumber);
-				System.out.println("  DeclaringClasses: " + Arrays.toString(edge.declaringClasses));
-				System.out.println();
-			}
 
 			// Process edges into call site mappings
 			Map<Method, Map<CallSiteKey, Set<MethodTarget>>> methodToCallSites = new HashMap<>();
@@ -237,8 +214,7 @@ public class ValueCG_TestAdapterImpl {
 							declaredTarget = createDummyDeclaredTarget(edge);
 						}
 					} catch (Exception e) {
-						System.out
-								.println("  Error extracting declared target from statement: " + edge.sourceStatement);
+						System.out.println("  Error extracting declared target from statement: " + edge.sourceStatement);
 						// declaredTarget can't be null because JCG's soundness eval will fail silently
 						System.out.println("  Creating a dummy declaredTarget.");
 						declaredTarget = createDummyDeclaredTarget(edge);
@@ -263,7 +239,6 @@ public class ValueCG_TestAdapterImpl {
 			Set<ReachableMethod> reachableMethods = new HashSet<>();
 
 			for (Method method : allMethods) {
-				System.out.println("\nProcessing method: " + methodToString(method));
 
 				Set<CallSite> callSites = new HashSet<>();
 
@@ -324,6 +299,8 @@ public class ValueCG_TestAdapterImpl {
 
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to process " + inputFile, e);
+		} finally {
+			FileUtils.deleteDirectory(outDir.toFile());
 		}
 
 		return System.nanoTime() - start;
