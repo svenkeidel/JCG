@@ -54,6 +54,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         val result = Using.Manager { use =>
             val serverSocket = use(new ServerSocket(port))
 
+            println(args)
             new ProcessBuilder(args.asJava).inheritIO().start()
 
             val clientSocket = use(serverSocket.accept)
