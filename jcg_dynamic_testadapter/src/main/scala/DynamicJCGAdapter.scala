@@ -27,17 +27,15 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         adapterOptions: AdapterOptions = AdapterOptions.makeEmptyOptions()
     ): Long = {
         val mainClass = adapterOptions.getString("mainClass")
-        val classPath = adapterOptions.getStringArray("classPath")
+        var classPath = List.from(adapterOptions.getStringArray("classPath"))
         val JDKPath = adapterOptions.getString("JDKPath")
-        val target = adapterOptions.getString("target")
         val jvmArgs = adapterOptions.getStringArray("jvmArgs")
         val programArgs = adapterOptions.getStringArray("programArgs")
 
         val javaPath = Paths.get(JDKPath).getParent.toAbsolutePath.toString + "/bin/java"
-        val agentPath = getClass.getResource("DynamicCG.so").getPath
+        val agentPath = Paths.get("jcg_dynamic_testadapter", "src", "main", "resources", "DynamicCG.so")
         val agentArgs = Array(port.toString).mkString(",")
-        val cp = target + File.pathSeparator +
-            util.Arrays.stream(classPath).collect(Collectors.joining(File.pathSeparator))
+        classPath :+= inputDirPath
 
         val reachableMethods = mutable.Set[Method]()
         val edges = mutable.Map[Method, mutable.Map[(Int, Int), mutable.Set[Method]]]()
@@ -45,16 +43,16 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         var args = List(javaPath)
         args ++= jvmArgs
         args :+= s"-agentpath:$agentPath=$agentArgs"
-        args ++= List("-cp", cp)
+        args ++= List("-cp", classPath.mkString(":"))
         args :+= mainClass
         args ++= programArgs
 
         val before = System.nanoTime
 
+        println(args.mkString(" "))
         val result = Using.Manager { use =>
             val serverSocket = use(new ServerSocket(port))
 
-            println(args)
             new ProcessBuilder(args.asJava).inheritIO().start()
 
             val clientSocket = use(serverSocket.accept)
