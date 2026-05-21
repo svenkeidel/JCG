@@ -41,7 +41,7 @@ object CompareJVMProfiledMethods {
     }
 
     private def parseCallGraph(callGraphFile: String) = {
-        EvaluationHelper.readCG(new File(callGraphFile)).toMap
+        EvaluationHelper.readReachableMethods(new File(callGraphFile)).toMap
     }
 
     private def parseProfileMethods(profile: String): List[Method] = {

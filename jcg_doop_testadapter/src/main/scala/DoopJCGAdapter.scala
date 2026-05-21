@@ -22,7 +22,7 @@ import org.opalj.br.ReturnType
 import org.opalj.br.analyses.Project
 import org.opalj.br.analyses.SomeProject
 import org.opalj.br.instructions.Instruction
-import org.opalj.br.instructions.INVOKEDYNAMIC
+import org.opalj.br.instructions.NEW
 import org.opalj.br.instructions.MethodInvocationInstruction
 
 /**
@@ -88,16 +88,21 @@ object DoopAdapter extends JavaTestAdapter {
         // todo what abot <clinit> etc where no call is in the bytecode
         val declObjType = FieldType(declaredType)
 
-        val getInstr: PartialFunction[Instruction, Instruction] = {
-            // todo what about lambdas?
-            case instr: MethodInvocationInstruction if (
-                instr.name == name &&
-                    (instr.declaringClass == declObjType ||
-                        declObjType == ClassType.Object && instr.declaringClass.isArrayType)
-                ) ⇒ instr //&& instr.declaringClass == FieldType(declaredType) ⇒ instr // && instr.methodDescriptor == tgtMD ⇒ instr
-            case instr: INVOKEDYNAMIC ⇒ instr
+        val getInstr: PartialFunction[Instruction, Instruction] =
+            if(declaredTgt.startsWith("new ")) {
+                case instr: NEW if(instr.classType.toJava == declaredTgt.stripPrefix("new ")) =>
+                    instr
+            }
+            else
+            {
+                // todo what about lambdas?
+                case instr: MethodInvocationInstruction if (
+                    instr.name == name &&
+                        (instr.declaringClass == declObjType ||
+                            declObjType == ClassType.Object && instr.declaringClass.isArrayType)
+                    ) ⇒ instr //&& instr.declaringClass == FieldType(declaredType) ⇒ instr // && instr.methodDescriptor == tgtMD ⇒ instr
                 //throw new Error()
-        }
+            }
 
         val calls = callerOpal.body.get.collect(getInstr)
 
@@ -175,7 +180,7 @@ object DoopAdapter extends JavaTestAdapter {
     private def extractDoopCG(
         doopEdges: Source, doopReachable: Source
     ): Map[String, Map[(String, Int), Set[String]]] = {
-        val callGraph = mutable.Map.empty[String, mutable.Map[(String, Int), mutable.Set[String]]].withDefault(_ ⇒ mutable.OpenHashMap.empty.withDefault(_ ⇒ mutable.Set.empty))
+        val callGraph = mutable.Map.empty[String, mutable.Map[(String, Int), mutable.Set[String]]].withDefault(_ ⇒ mutable.HashMap.empty.withDefault(_ ⇒ mutable.Set.empty))
 
         for (line ← doopEdges.getLines()) {
             val Array(_, callerDeclaredTgtNumber, _, tgtStr) = line.split("\t")
@@ -188,6 +193,9 @@ object DoopAdapter extends JavaTestAdapter {
                         ("<java.lang.Thread: java.lang.Thread currentThread()>", "java.lang.Thread.<init>", "0")
                     } else if ("<thread-group-init>/0" == callerDeclaredTgtNumber) {
                         ("<java.lang.Thread: java.lang.Thread currentThread()>", "java.lang.ThreadGroup.<init>", "0")
+                    } else if (callerDeclaredTgtNumber.startsWith("<register-finalize")) {
+                        val array = callerDeclaredTgtNumber.drop("<register-finalize ".length).dropRight("  >".length).split("/")
+                        (array(array.length - 3), array(array.length - 2), array(array.length - 1))
                     } else {
                         val Array(callerStr, declaredTgt, numberString) = callerDeclaredTgtNumber.split("/")
                         (callerStr, declaredTgt, numberString)
@@ -205,8 +213,8 @@ object DoopAdapter extends JavaTestAdapter {
                 currentCallsites += (callSite → currentCallees)
                 callGraph += (caller → currentCallsites)
             } catch {
-                case _: Throwable ⇒
-                    println()
+                case e: Throwable ⇒
+                    println(e)
             }
 
         }
@@ -287,9 +295,9 @@ object DoopAdapter extends JavaTestAdapter {
         assert(algorithm == "context-insensitive")
 
         var args = Array("./bin/doop", "-a", "context-insensitive", "-t", "1440", "--platform", "java_8", "-i", inputDirPath) ++ classPath
-        if (analyzeJDK) {
-           args ++= JRELocation.getAllJREJars(JDKPath).map(_.getCanonicalPath)
-        }
+//        if (analyzeJDK) {
+//           args ++= JRELocation.getAllJREJars(JDKPath).map(_.getCanonicalPath)
+//        }
 
         // args ++= Array("--reflection-classic")
 
@@ -301,6 +309,8 @@ object DoopAdapter extends JavaTestAdapter {
             throw new RuntimeException("failed to run doop")
 
         val before = System.nanoTime()
+
+        println(args.mkString(" "))
 
         Process(
             args,

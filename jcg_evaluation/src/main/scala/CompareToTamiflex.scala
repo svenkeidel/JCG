@@ -75,7 +75,7 @@ object CompareToTamiflex {
     }
 
     private def parseCallGraph(callGraphFile: String) = {
-        EvaluationHelper.readCG(new File(callGraphFile)).toMap
+        EvaluationHelper.readReachableMethods(new File(callGraphFile)).toMap
     }
 
     def extractMethod(targetInfo: String, reflectionType: String) : Method = {

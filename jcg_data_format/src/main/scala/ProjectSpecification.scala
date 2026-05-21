@@ -1,12 +1,12 @@
 import java.io.File
-
-import coursier._
-
+import coursier.*
 import play.api.libs.json.JsPath
 import play.api.libs.json.Json
 import play.api.libs.json.Reads
 import play.api.libs.json.OWrites
 import play.api.libs.json.Writes
+
+import java.nio.file.Path
 
 /**
  * Specifies a target project.

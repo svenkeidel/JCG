@@ -33,8 +33,8 @@ object CompareCallSites {
                 sizeGap = gap.toInt
         }
 
-        val cg1 = EvaluationHelper.readCG(new File(cg1Path)).toMap
-        val cg2 = EvaluationHelper.readCG(new File(cg2Path)).toMap
+        val cg1 = EvaluationHelper.readReachableMethods(new File(cg1Path)).toMap
+        val cg2 = EvaluationHelper.readReachableMethods(new File(cg2Path)).toMap
 
         val commonReachableMethods = cg1.filter(m ⇒ cg2.contains(m._1)).keySet
 

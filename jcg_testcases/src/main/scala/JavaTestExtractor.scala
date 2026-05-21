@@ -45,7 +45,7 @@ object JavaTestExtractor extends TestCaseExtractor {
             val targetDirs = FileOperations.findJCGTargetDirs()
             val classPath = Seq(".", FileOperations.targetDirsToCP(targetDirs), System.getProperty("java.home")).mkString(s"${File.pathSeparator}")
 
-            val compilerArgs = Seq("-cp", s"$classPath", "-d", bin.getAbsolutePath, "-encoding", "UTF-8", "-source", "1.8", "-target", "1.8") ++ srcFiles
+            val compilerArgs = Seq("-cp", s"$classPath", "-d", bin.getAbsolutePath, "-encoding", "UTF-8", "--release", "8") ++ srcFiles
 
             if (TestCaseExtractor.debug) {
                 println(compilerArgs.mkString("[DEBUG] Compiler args: \n\n", "\n", "\n\n"))

@@ -52,7 +52,7 @@ object CallGraphSize {
     }
 
     def printStatistic(cgFile: File, appPackages: List[String], callGraphName : String = ""): Unit = {
-        val reachableMethods = EvaluationHelper.readCG(cgFile).reachableMethods
+        val reachableMethods = EvaluationHelper.readReachableMethods(cgFile).reachableMethods
 
         val appMethods = reachableMethods.count { rm =>
             val declClass = rm.method.declaringClass

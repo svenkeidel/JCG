@@ -1,208 +1,201 @@
-import java.io.BufferedWriter
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.FileWriter
-import java.io.OutputStreamWriter
-import java.io.PrintWriter
-import java.util.zip.GZIPOutputStream
-import play.api.libs.json.Json
-import scala.io.Source
+import java.io.*
+import java.nio.file.*
+import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 
+import play.api.libs.json.Json
 import org.opalj.br.MethodDescriptor
+
+import scala.io.Source
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
+import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.TimeoutException
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.DurationInt
+import scala.util.Using
+import scala.jdk.StreamConverters.*
 
 object Evaluation {
 
-    private var projectSpecificEvaluation = false
-    private var excludeJDK = false
-    private var runAnalyses = true
-    private var allQueries = false
-    private var programArgs = Array.empty[String]
-
-    private var FINGERPRINT_DIR = ""
-
     def main(args: Array[String]): Unit = {
-
-        // val c = parseConfig(args)
-
-        val config = CommonEvaluationConfig.processArguments(args)
-        parseArguments(args)
-
-        val projectsDir = EvaluationHelper.getProjectsDir(config.INPUT_DIR_PATH)
+        val config = ConfigParser.parseConfig(args).getOrElse {
+            throw IllegalArgumentException(s"Cannot parse commandline arguments: ${args.mkString(" ")}")
+        }
 
         val jreLocations = EvaluationHelper.getJRELocations(config.JRE_LOCATIONS_FILE)
 
-        if (runAnalyses) {
-            val resultsDir = new File(config.OUTPUT_DIR_PATH)
-            resultsDir.mkdirs()
-            val locations: Map[String, Map[String, Set[Method]]] = createLocationsMapping(resultsDir)
-            runAnalyses(projectsDir, resultsDir, jreLocations, locations, config, programArgs)
-        }
-    }
+        Files.createDirectories(config.outputDir)
 
-    private def parseArguments(args: Array[String]): Unit = {
-        args.sliding(1, 1).toList.collect {
-            case Array("--project-specific") => projectSpecificEvaluation = true
-            case Array("--exclude-jdk")      => excludeJDK = true
-            case Array("--all-queries")      => allQueries = true
-        }
-        args.sliding(2, 1).toList.collect {
-            case Array("--fingerprint-dir", dir) =>
-                assert(FINGERPRINT_DIR.isEmpty, "multiple fingerprint directories specified")
-                FINGERPRINT_DIR = dir
-            case Array("--analyze", value: String) => runAnalyses = value.toBoolean
-        }
-        val argsIndex = args.indexOf("--program-args") + 1
-        if (argsIndex > 0) {
-            val argsEndIndex = args.indexWhere(_.startsWith("--"), argsIndex)
-            programArgs = args.slice(argsIndex, if (argsEndIndex >= 0) argsEndIndex else args.length)
-        }
-
-        if (projectSpecificEvaluation) {
-            assert(runAnalyses, "`--analyze` must be set to true on `--project-specific true`")
-            assert(FINGERPRINT_DIR.nonEmpty, "no fingerprint directory specified")
-        }
-    }
-
-    private def createLocationsMapping(resultsDir: File): Map[String, Map[String, Set[Method]]] = {
-        val locations: Map[String, Map[String, Set[Method]]] =
-            if (projectSpecificEvaluation) {
-                println("create locations mapping")
-                (for {
-                    projectLocation <- resultsDir.listFiles(_.getName.endsWith(".tsv"))
-                    line <- Source.fromFile(projectLocation).getLines().drop(1)
-                    lineSplit = line.split("\t", -1)
-                    if lineSplit.size == 9
-                    Array(projectId, featureId, _, _, classString, methodName, mdString, _, _) = lineSplit
-                    if methodName.nonEmpty && mdString.nonEmpty
-                } yield {
-                    val projectName = projectId.replace("\"", "")
-                    val featureName = featureId.replace("\"", "")
-                    val className = classString.replace("\"", "")
-                    val md = MethodDescriptor(mdString.replace("\"", ""))
-                    val params = md.parameterTypes.map[String](_.toJVMTypeName).toList
-                    val returnType = md.returnType.toJVMTypeName
-                    (projectName, featureName, Method(methodName, className, returnType, params))
-                }).groupBy(_._1).map {
-                    case (pId, group1) => pId -> group1.map { case (_, f, m) => f -> m }.groupBy(_._1).map {
-                            case (fId, group2) => fId -> group2.map(_._2).toSet
-                        }
-                }
-            } else
-                Map.empty
-        locations
-    }
-
-    private def runAnalyses(
-        projectsDir:  File,
-        resultsDir:   File,
-        jreLocations: Map[Int, String],
-        locationsMap: Map[String, Map[String, Set[Method]]],
-        config:       CommonEvaluationConfig,
-        programArgs:  Array[String]
-    ): Unit = {
-        val projectSpecFiles = projectsDir.listFiles { (_, name) =>
-            name.endsWith(".conf") && name.startsWith(config.PROJECT_PREFIX_FILTER)
-        }.sorted
+        val projectSpecPaths =
+            Files.list(config.inputDir)
+                .filter(path => path.toString.endsWith(".conf") && path.toString.contains(config.projectFilter))
+                .sorted
+                .toScala(List)
 
         for {
-            adapter <- config.EVALUATION_ADAPTERS
-            cgAlgo <-
-                adapter.possibleAlgorithms.filter(_.toLowerCase().startsWith(config.ALGORITHM_PREFIX_FILTER.toLowerCase()))
-            psf <- projectSpecFiles
+            adapter <- config.adapters
+            cgAlgo <- adapter.possibleAlgorithms.filter(_.toLowerCase().startsWith(config.algorithmFilter.toLowerCase()))
         } {
+            val experimentOutputPath = config.outputDir.resolve(adapter.frameworkName, cgAlgo)
+            Files.createDirectories(experimentOutputPath)
 
-            val projectSpec = Json.parse(new FileInputStream(psf)).validate[ProjectSpecification].get
+            Using(makeFingerprintWriter(experimentOutputPath, adapter, cgAlgo)) { fingerprintWriter =>
 
-            println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
+                for (projectSpecPath <- projectSpecPaths) {
 
-            val outDir = EvaluationHelper.getOutputDirectory(adapter, cgAlgo, projectSpec, resultsDir)
-            outDir.mkdirs()
+                    val projectSpec = Json.parse(new FileInputStream(projectSpecPath.toFile)).validate[ProjectSpecification].get
+                    val testCase = projectSpecPath.getFileName.toString.stripSuffix(".conf")
 
-            val cgFile = new File(outDir, config.SERIALIZATION_FILE_NAME)
-            if (cgFile.exists())
-                cgFile.delete()
+                    val callGraphPath = experimentOutputPath.resolve(s"$testCase.json.gz")
 
-            val output =
-                if (config.COMPRESS)
-                    new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(cgFile)))
-                else
-                    new BufferedWriter(new FileWriter(cgFile))
+                    if (!config.skipAnalysis)
+                        runAnalysis(config, jreLocations, adapter, cgAlgo, projectSpec, testCase, experimentOutputPath, callGraphPath, fingerprintWriter)
 
-            val elapsed =
-                try {
-                    adapter.serializeCG(
-                        cgAlgo,
-                        projectSpec.target(projectsDir).getCanonicalPath,
-                        output,
-                        AdapterOptions.makeJavaOptions(
-                            projectSpec.main.orNull,
-                            projectSpec.allClassPathEntryPaths(projectsDir),
-                            jreLocations(projectSpec.java),
-                            !excludeJDK,
-                            programArgs = programArgs
-                        )
-                    )
-
-                } catch {
-                    case e: Throwable =>
-                        println(s"exception in project ${projectSpec.name}")
-                        if (config.DEBUG) {
-                            e.printStackTrace()
-                        }
-                        -1
-                } finally {
-                    output.close()
+                    assessCallGraph(config, jreLocations, projectSpec, testCase, experimentOutputPath, callGraphPath, fingerprintWriter)
                 }
-
-            System.gc()
-
-            reportTiming(outDir, elapsed)
-
-            if (projectSpecificEvaluation) {
-                assert(cgFile.exists(), "the adapter failed to write the call graph")
-                performProjectSpecificEvaluation(
-                    projectSpec,
-                    adapter,
-                    cgAlgo,
-                    locationsMap,
-                    outDir,
-                    cgFile
-                )
             }
         }
     }
 
-    private def reportTiming(outDir: File, elapsed: Long): Unit = {
+    private def runAnalysis(
+        config: JCGConfig,
+        jreLocations: Map[Int, String],
+        adapter: TestAdapter,
+        cgAlgo: String,
+        projectSpec: ProjectSpecification,
+        testCase: String,
+        experimentOutputPath: Path,
+        callGraphPath: Path,
+        fingerprintWriter: PrintWriter
+    ) = {
+        Using(makeCallGraphWriter(callGraphPath)) { callGraphWriter =>
+
+            println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
+
+            val future = Future {
+                try {
+                    adapter.serializeCG(
+                        cgAlgo,
+                        projectSpec.target(config.inputDir.toFile).getCanonicalPath,
+                        callGraphWriter,
+                        AdapterOptions.makeJavaOptions(
+                            projectSpec.main.orNull,
+                            projectSpec.allClassPathEntryPaths(config.inputDir.toFile),
+                            jreLocations(projectSpec.java),
+                            analyzeJDK = false,
+                            programArgs = config.programArgs.split(" ")
+                        )
+                    )
+                } catch {
+                    case e: Throwable =>
+                        println(s"exception in project ${projectSpec.name}")
+                        if (config.debug) {
+                            e.printStackTrace()
+                        }
+                        -1
+                }
+            }
+
+
+            try {
+                val elapsed = tryAwait(config.timeout, future)
+                reportTiming(experimentOutputPath, testCase, elapsed)
+            } catch {
+                case _: TimeoutException =>
+                    println(s"Timeout after ${config.timeout} seconds")
+                    val result = Timeout
+                    fingerprintWriter.println(s"$testCase\t${result.shortNotation}")
+                    reportTiming(experimentOutputPath, testCase, -1)
+                case e: Throwable => println(e.getMessage)
+            } finally {
+                System.gc()
+            }
+        }
+    }
+
+    private def assessCallGraph(config: JCGConfig, jreLocations: Map[Int, String], projectSpec: ProjectSpecification, testCase: String, experimentOutputPath: Path, callGraphPath: Path, fingerprintWriter: PrintWriter): Unit = {
+        val assessment = config.language match {
+            case "java" =>
+                val callGraph = Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) { stream =>
+                    Json.parse(stream).validate[ReachableMethods].get.toMap
+                }.get
+
+                CGMatcher.matchCallSites(
+                    projectSpec,
+                    jreLocations(projectSpec.java),
+                    experimentOutputPath.toFile,
+                    callGraph,
+                    config.debug
+                )
+            case "javascript" | "python" =>
+
+                if(! Files.exists(callGraphPath))
+                    throw IllegalArgumentException(s"Call graph file $callGraphPath does not exist.")
+
+                val callGraph = new AdapterCG(callGraphPath.toFile)
+
+                val expectedCallGraphPath = config.inputDir.resolve(s"$testCase.json")
+
+                if(! Files.exists(expectedCallGraphPath))
+                    throw IllegalArgumentException(s"Call graph file $expectedCallGraphPath does not exist.")
+
+                val expectedCG = new ExpectedCG(expectedCallGraphPath.toFile)
+
+                val isSound = callGraph.compareLinks(expectedCG).length == 0
+                if (isSound) Sound else Unsound
+        }
+
+        fingerprintWriter.write(s"$testCase -> $assessment\n")
+
+    }
+
+    private def reportTiming(experimentOutputPath: Path, testCase: String, elapsed: Long): Unit = {
         val seconds = elapsed / 1000000000d
-        val pw = new PrintWriter(new File(outDir, "timings.txt"))
+        val pw = new PrintWriter(experimentOutputPath.resolve(s"${testCase}-timings.txt").toFile)
         pw.write(s"$seconds sec.")
         pw.close()
         println(s"analysis took $seconds sec.")
     }
 
-    private def performProjectSpecificEvaluation(
-        projectSpec:  ProjectSpecification,
-        adapter:      TestAdapter,
-        algorithm:    String,
-        locationsMap: Map[String, Map[String, Set[Method]]],
-        outDir:       File,
-        jsFile:       File
-    ): Unit = {
-        val fingerprint = FingerprintExtractor.parseFingerprints(adapter, algorithm, new File(FINGERPRINT_DIR))
-        val locations = locationsMap(projectSpec.name)
-        val reachableMethods = Json.parse(new FileInputStream(jsFile)).validate[ReachableMethods].get.toMap
 
-        val projectSpecificLocations = ProjectSpecificEvaluator.projectSpecificEvaluation(
-            reachableMethods.keySet,
-            locations,
-            fingerprint
-        )
+    /**
+     * Expects future that generates call graph, awaits it for a given timeout
+     * and on timeout writes the timeout to the fingerprint and evaluation file.
+     *
+     * @param timeout           The timeout in seconds.
+     * @param future            The future that generates the call graph.
+     */
+    @throws[TimeoutException](classOf[TimeoutException])
+    @throws[InterruptedException](classOf[InterruptedException])
+    protected def tryAwait(
+        timeout: Int,
+        future: Future[Long]
+    ): Long = {
+        val duration =
+            if (timeout >= 0)
+                timeout.seconds
+            else Duration.Inf
+        Await.result(future, duration)
+    }
 
-        val pw = new PrintWriter(new File(outDir, "pse.tsv"))
-        for ((location, fID) <- projectSpecificLocations) {
-            pw.println(s"${projectSpec.name}\t$fID\t$location")
-        }
-        pw.close()
+    /**
+     * Creates a PrintWriter for the fingerprint file.
+     * @param experimentOutputPath The directory where the fingerprint file should be created.
+     * @param adapter The test adapter used to create fingerprints.
+     * @param cgAlgorithm The call graph algorithm used to create the fingerprints.
+     * @return
+     */
+    protected def makeFingerprintWriter(experimentOutputPath: Path, adapter: TestAdapter, cgAlgorithm: String): PrintWriter = {
+        val fingerprintPath = experimentOutputPath.resolve(s"${adapter.frameworkName}-$cgAlgorithm.profile")
+        Files.deleteIfExists(fingerprintPath)
+        PrintWriter(fingerprintPath.toFile)
+    }
+
+    protected def makeCallGraphWriter(callGraphPath: Path): Writer = {
+        Files.deleteIfExists(callGraphPath)
+        OutputStreamWriter(new GZIPOutputStream(BufferedOutputStream(FileOutputStream(callGraphPath.toFile))))
     }
 }

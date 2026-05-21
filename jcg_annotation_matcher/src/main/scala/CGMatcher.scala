@@ -1,5 +1,4 @@
-import java.io.File
-import java.io.FileInputStream
+import java.io.{BufferedInputStream, File, FileInputStream}
 import org.opalj.br
 import org.opalj.br.Annotation
 import org.opalj.br.analyses.Project
@@ -8,8 +7,10 @@ import org.opalj.log.GlobalLogContext
 import org.opalj.log.OPALLogger
 import play.api.libs.json.Json
 
+import java.util.zip.GZIPInputStream
 import scala.util.boundary
 import scala.util.boundary.break
+import scala.util.Using
 
 /**
  * For a given project and a computed (serialized as json representation of [[ReachableMethods]])
@@ -30,7 +31,7 @@ object CGMatcher {
         projectSpec:         ProjectSpecification,
         JREPath:             String,
         parent:              File,
-        serializedCallGraph: File,
+        callGraph:           Map[Method, Set[CallSite]],
         verbose:             Boolean              = false
     ): Assessment = boundary {
         if (!verbose)
@@ -41,13 +42,6 @@ object CGMatcher {
             Array(projectSpec.target(parent)) ++ projectSpec.allClassPathEntryFiles(parent) ++ jreFiles,
             Array.empty[File]
         )
-
-        if(!serializedCallGraph.exists() || serializedCallGraph.length() == 0){
-            break(Error)
-        }
-
-        val computedReachableMethods =
-            Json.parse(new FileInputStream(serializedCallGraph)).validate[ReachableMethods].get.toMap
 
         for {
             clazz ← p.allProjectClassFiles
@@ -64,7 +58,7 @@ object CGMatcher {
                 val directCallAnnotations = AnnotationHelper.directCallAnnotations(annotation)
 
                 val csAssessment = handleDirectCallAnnotations(
-                    computedReachableMethods.getOrElse(annotatedMethod, Set.empty),
+                    callGraph.getOrElse(annotatedMethod, Set.empty),
                     annotatedMethod,
                     method,
                     directCallAnnotations,
@@ -78,7 +72,7 @@ object CGMatcher {
                 val indirectCallAnnotations = AnnotationHelper.indirectCallAnnotations(annotation)
 
                 val icsAssessment = handleIndirectCallAnnotations(
-                    computedReachableMethods,
+                    callGraph,
                     method,
                     indirectCallAnnotations,
                     verbose

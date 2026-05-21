@@ -1,40 +1,26 @@
-import java.io.File
-import java.io.FileInputStream
+import java.io.{BufferedInputStream, File, FileInputStream}
+import java.nio.file.*
 import java.util.zip.GZIPInputStream
 import play.api.libs.json.Json
 
-// todo make a factory
-class CommonEvaluationConfig(
-    val DEBUG:                   Boolean,
-    val INPUT_DIR_PATH:          String,
-    val OUTPUT_DIR_PATH:         String,
-    val EVALUATION_ADAPTERS:     List[TestAdapter],
-    val PROJECT_PREFIX_FILTER:   String,
-    val ALGORITHM_PREFIX_FILTER: String,
-    val COMPRESS:                Boolean
-) {
-    val JRE_LOCATIONS_FILE = "jre.conf"
-    val SERIALIZATION_FILE_NAME = if (COMPRESS) "cg.gz" else "cg.json"
-}
-
 case class JCGConfig(
-    inputDir:        File              = new File("."),
-    outputDir:       File              = new File("."),
+    inputDir:        Path              = Paths.get("."),
+    outputDir:       Path              = Paths.get("."),
     adapters:        List[TestAdapter] = List.empty,
     projectFilter:   String            = "",
     algorithmFilter: String            = "",
     timeout:         Int               = -1,
-    pseval:          Boolean           = false,
-    excludeJDK:      Boolean           = false,
-    runAnalyses:     Boolean           = true,
-    allQueries:      Boolean           = false,
-    fingerprintDir:  File              = new File(""),
+    skipAnalysis:    Boolean           = false,
+    fingerprintDir:  Path              = Paths.get(""),
+    compress:        Boolean           = false,
     debug:           Boolean           = false,
     parallel:        Boolean           = false,
-    language:        String            = ""
+    language:        String            = "",
+    programArgs:     String            = ""
 ) {
     val JRE_LOCATIONS_FILE = "jre.conf"
-    val SERIALIZATION_FILE_NAME = "cg.json"
+    val SERIALIZATION_FILE_NAME = "cg.json.gz"
+    val EVALUATION_RESULT_FILE_NAME = "evaluation-result.tsv"
 }
 
 object ConfigParser {
@@ -49,23 +35,20 @@ object ConfigParser {
             OParser.sequence(
                 programName("Java Call Graph Tests"),
                 head("JCG", "0.4.0"),
-                opt[File]('i', "inputDir")
+                opt[Path]('i', "input")
                     .action((dir, c) => c.copy(inputDir = dir))
                     .text("Defines the directory with the configuration files for the input projects.")
                     .required().maxOccurs(1)
                     .validate { dir =>
-                        if (dir.exists() && dir.isDirectory) success
-                        else failure(s"Value ${dir.getAbsolutePath} must exist and must be a directory.")
+                        if (Files.exists(dir) && Files.isDirectory(dir)) success
+                        else failure(s"Value ${dir.toAbsolutePath} must exist and must be a directory.")
                     }
                     .validate { dir =>
-                        if (FileOperations.hasFilesDeep(dir, ".conf", ".js", ".py")) success
-                        else failure(s"${dir.getAbsolutePath} does not contain *.conf, *.js or *.py files")
+                        if (FileOperations.hasFilesDeep(dir.toFile, ".conf", ".js", ".py")) success
+                        else failure(s"${dir.toAbsolutePath} does not contain *.conf, *.js or *.py files")
                     },
-                opt[File]('o', "outputDir")
-                    .action { (dir, c) =>
-                        if (!dir.exists()) dir.mkdirs()
-                        c.copy(outputDir = dir)
-                    }
+                opt[Path]('o', "output")
+                    .action { (dir, c) => c.copy(outputDir = dir) }
                     .text("Defines the output directory; all files will be placed here.")
                     .required().maxOccurs(1),
                 opt[String]("project-prefix")
@@ -93,6 +76,14 @@ object ConfigParser {
                     .valueName("adapter")
                     .optional()
                     .unbounded(),
+                opt[Unit]("skip-analysis")
+                    .action((_, c) => c.copy(skipAnalysis = true))
+                    .text("Skips reanalysis of call graphs and instead reads call graphs from disk.")
+                    .optional(),
+                opt[Unit]('c', "compress")
+                    .action((_, c) => c.copy(compress = true))
+                    .hidden()
+                    .optional(),
                 opt[Unit]('d', "debug")
                     .action((_, c) => c.copy(debug = true))
                     .hidden()
@@ -101,7 +92,7 @@ object ConfigParser {
                     .action((_, c) => c.copy(parallel = true))
                     .hidden()
                     .optional(),
-                opt[File]('f', "fingerprintDir")
+                opt[Path]('f', "fingerprintDir")
                     .action((dir, c) => c.copy(fingerprintDir = dir))
                     .text("provide a fingerprint for a project-specific evaluation")
                     .valueName("<path/to/dir>")
@@ -111,6 +102,10 @@ object ConfigParser {
                     .text("provide the language of the projects")
                     .valueName("language")
                     .required(),
+                opt[String]('a', "program-args")
+                    .action((args, c) => c.copy(programArgs = args))
+                    .text("additional arguments passed to the call graph analyses")
+                    .valueName("args"),
                 checkConfig(c =>
                     // check if adapters match language
                     if (c.adapters.map(_.language.toLowerCase).forall(_ == c.language.toLowerCase)) success
@@ -135,62 +130,6 @@ object ConfigParser {
 
 }
 
-object CommonEvaluationConfig {
-
-    def processArguments(args: Array[String]): CommonEvaluationConfig = {
-        var DEBUG = false
-        var OUTPUT_DIR_PATH = ""
-        var INPUT_DIR_PATH = ""
-        var COMPRESS = false
-
-        var EVALUATION_ADAPTERS = List.empty[JavaTestAdapter]
-
-        var PROJECT_PREFIX_FILTER = ""
-        var ALGORITHM_PREFIX_FILTER = ""
-
-        args.sliding(2, 1).toList.collect {
-            case Array("--input", i) ⇒
-                assert(INPUT_DIR_PATH.isEmpty, "multiple input directories specified")
-                INPUT_DIR_PATH = i
-            case Array("--output", o) ⇒
-                assert(OUTPUT_DIR_PATH.isEmpty, "multiple output directories specified")
-                OUTPUT_DIR_PATH = o
-            case Array("--project-prefix", prefix) ⇒
-                assert(PROJECT_PREFIX_FILTER.isEmpty, "multiple project filters specified")
-                PROJECT_PREFIX_FILTER = prefix
-            case Array("--algorithm-prefix", prefix) ⇒
-                assert(ALGORITHM_PREFIX_FILTER.isEmpty, "multiple algorithm filters specified")
-                ALGORITHM_PREFIX_FILTER = prefix
-            case Array("--adapter", name) ⇒ // you can use this option multiple times
-                val adapter = EvaluationHelper.ALL_JAVA_ADAPTERS.find(_.frameworkName.toLowerCase == name.toLowerCase)
-                assert(adapter.nonEmpty, s"'$name' is not a valid framework adapter")
-                EVALUATION_ADAPTERS ++= adapter
-        }
-
-        args.sliding(1, 1).toList.collect {
-            case Array("--debug") ⇒ DEBUG = true
-            case Array("--compress") ⇒ COMPRESS = true
-        }
-
-        assert(INPUT_DIR_PATH.nonEmpty, "no input directory specified")
-        assert(OUTPUT_DIR_PATH.nonEmpty, "no output directory specified")
-        val outputDir = new File(OUTPUT_DIR_PATH)
-        if (!outputDir.exists()) {
-            outputDir.mkdirs()
-        }
-
-        new CommonEvaluationConfig(
-            DEBUG,
-            INPUT_DIR_PATH,
-            OUTPUT_DIR_PATH,
-            if (EVALUATION_ADAPTERS.isEmpty) EvaluationHelper.ALL_JAVA_ADAPTERS else EVALUATION_ADAPTERS,
-            PROJECT_PREFIX_FILTER,
-            ALGORITHM_PREFIX_FILTER,
-            COMPRESS
-        )
-    }
-}
-
 object EvaluationHelper {
     val ALL_JAVA_ADAPTERS: List[JavaTestAdapter] = List(DynamicJCGAdapter, DoopAdapter, OpalJCGAdatper, SootJCGAdapter, SootUpJCGAdapter, /*SenecaJCGAdapter,*/ Tai_e_JCG_Adapter, WalaJCGAdapter)
     val ALL_JS_ADAPTERS: List[JSTestAdapter] =
@@ -198,9 +137,7 @@ object EvaluationHelper {
     val ALL_PY_ADAPTERS: List[PyTestAdapter] =
         List(PyCGAdapter, PyanAdapter, Code2flowPyCallGraphAdapter, JarvisCallGraphAdapter)
 
-    def getProjectsDir(inputPath: String): File = {
-        val projectsDir = new File(inputPath)
-
+    def getProjectsDir(projectsDir: File): File = {
         assert(projectsDir.exists(), s"${projectsDir.getPath} does not exists")
         assert(projectsDir.isDirectory, s"${projectsDir.getPath} is not a directory")
         assert(
@@ -227,12 +164,12 @@ object EvaluationHelper {
         new File(resultsDir, dirName)
     }
 
-    def readCG(cgFile: File): ReachableMethods = {
+    def readReachableMethods(cgFile: File): ReachableMethods = {
         val input =
             if (cgFile.getName.endsWith(".zip") || cgFile.getName.endsWith(".gz"))
-                new GZIPInputStream(new FileInputStream(cgFile))
+                new GZIPInputStream(BufferedInputStream(FileInputStream(cgFile)))
             else
-                new FileInputStream(cgFile)
+                BufferedInputStream(FileInputStream(cgFile))
 
         Json.parse(input).validate[ReachableMethods].get
     }
