@@ -277,7 +277,7 @@ object DoopAdapter extends JavaTestAdapter {
 
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getString("JDKPath")
+        val JDKPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
         assert(env.containsKey("DOOP_HOME"))
@@ -288,7 +288,7 @@ object DoopAdapter extends JavaTestAdapter {
         val doopPlatformDirs = Files.createTempDirectory(null).toFile
         val doopJDKPath = new File(doopPlatformDirs, "JREs/jre1.8/lib/")
         doopJDKPath.mkdirs()
-        FileUtils.copyDirectory(new File(JDKPath), doopJDKPath)
+        FileUtils.copyDirectory(JDKPath.toFile, doopJDKPath)
 
         val outDir = Files.createTempDirectory(null).toFile
 
@@ -328,7 +328,7 @@ object DoopAdapter extends JavaTestAdapter {
             Source.fromFile(cgCsv),
             Source.fromFile(rmCsv),
             new File(inputDirPath),
-            new File(JDKPath),
+            JDKPath.toFile,
             output
         )
 

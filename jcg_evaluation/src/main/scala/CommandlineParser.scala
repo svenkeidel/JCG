@@ -26,7 +26,7 @@ case class CommandlineOptions(
                                  analyzeJdk:      Boolean           = false,
                                  analysesArgs:    String            = "",
 
-                                 truthCallGraphsDirectory: String   = "",
+                                 truthCallGraphsDirectory:  Path    = Paths.get("."),
                                  reachableMethodsInclude:   Regex   = Regex(".*"),
                                  edgesInclude:              Regex   = Regex(".* -> .*")
 ) {
@@ -135,10 +135,9 @@ object CommandlineParser {
                 .action((_,c) => c.copy(action = Action.PrecisionRecall))
                 .text("Computes precision and recall with respect to an expected call graph.")
                 .children(
-                    opt[String]("truth-call-graphs-directory")
-                        .action((truthCallGraphsDirectory, c) => c.copy(truthCallGraphsDirectory = truthCallGraphsDirectory))
-                        .text("Name of the subdirectory within \"call-graph-directory\" that contain the call graphs " +
-                            "that serve as the truth in precision/recall computations")
+                    opt[String]("truth-callgraph-directory")
+                        .action((truthCallGraphDirectory, c) => c.copy(truthCallGraphsDirectory = Paths.get(truthCallGraphDirectory)))
+                        .text("Directory that contains the truth call graphs used for computing precision and recall")
                         .required(),
                     opt[String]("reachable-methods-include")
                         .action((reachableMethodsInclude, c) => c.copy(reachableMethodsInclude = Regex(reachableMethodsInclude)))

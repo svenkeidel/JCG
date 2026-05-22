@@ -171,7 +171,7 @@ object Commandline {
         val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
         val predictedCallGraph = Util.readReachableMethods(predictedCallGraphPath).toMap
 
-        val truthCallGraphsDirectory = options.callGraphsDir.resolve(options.truthCallGraphsDirectory)
+        val truthCallGraphsDirectory = options.truthCallGraphsDirectory.resolve("Dynamic", "Dynamic")
         val truthCallGraphPath = Util.findCallGraphFile(truthCallGraphsDirectory, testCase)
         val truthCallGraph = Util.readReachableMethods(truthCallGraphPath).toMap
 
