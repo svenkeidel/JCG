@@ -113,7 +113,7 @@ public class Tai_e_TestAdapterImpl {
             Writer output,
             String mainClass,
             String[] classPath,
-            String JDKPath,
+            Path JDKPath,
             boolean analyzeJDK) throws Exception {
 
         System.out.println("algorithm=" + algorithm + ", inputDirPath=" + inputDirPath + ", output=" + output
@@ -195,7 +195,7 @@ public class Tai_e_TestAdapterImpl {
             Path outDir,
             String mainClass,
             String[] classPath,
-            String jdkPath,
+            Path jdkPath,
             boolean analyzeJdk) throws Exception {
 
         // Create output directory for this file
