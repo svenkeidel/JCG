@@ -1,10 +1,13 @@
 import java.io.File
 import java.io.FileInputStream
-
+import java.io.BufferedInputStream
 import play.api.libs.json.Reads
 import play.api.libs.json.Json
 import play.api.libs.json.Writes
 import play.api.libs.json.JsSuccess
+
+import java.nio.file.{Files, Path, Paths}
+import scala.jdk.StreamConverters.*
 
 /**
  * Each JRE directory (`path`) is associated with the underlying java version.
@@ -45,10 +48,10 @@ object JRELocation {
      * From the give JRE locations specification file, this method creates a mapping from java
      * version the JRE root directory.
      */
-    def mapping(jreLocationsFile: File): Map[Int, String] = {
-        Json.parse(new FileInputStream(jreLocationsFile)).validate[Array[JRELocation]] match {
+    def mapping(jreLocationsFile: Path): Map[Int, Path] = {
+        Json.parse(BufferedInputStream(FileInputStream(jreLocationsFile.toFile))).validate[Array[JRELocation]] match {
             case JsSuccess(location, _) ⇒
-                location.map(jreLocation ⇒ jreLocation.version → jreLocation.path).toMap
+                location.map(jreLocation ⇒ jreLocation.version → Paths.get(jreLocation.path)).toMap
             case _ ⇒
                 throw new IllegalArgumentException("invalid jre location specification")
         }
@@ -57,12 +60,11 @@ object JRELocation {
     /**
      * Returns all .jar and .jmod files in the given directory and all transitive subdirectories.
      */
-    def getAllJREJars(JREPath: String): Array[File] = {
-        val jreDir = new File(JREPath)
-        val jars = jreDir.listFiles { file ⇒
-            file.getName.endsWith(".jar") | file.getName.endsWith(".jmod")
-        }
-        val jarsInSubDirs = jreDir.listFiles(_.isDirectory).flatMap(f ⇒ getAllJREJars(f.getPath))
+    def getAllJREJars(JREPath: Path): List[Path] = {
+        val jars = Files.list(JREPath).filter { path ⇒
+            path.getFileName.toString.endsWith(".jar") | path.getFileName.toString.endsWith(".jmod")
+        }.toScala(List)
+        val jarsInSubDirs = Files.list(JREPath).filter(Files.isDirectory(_)).toScala(List).flatMap(getAllJREJars)
         jars ++ jarsInSubDirs
     }
 }

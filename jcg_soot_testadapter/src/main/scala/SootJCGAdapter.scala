@@ -2,16 +2,17 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.PrintStream
 import java.io.Writer
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters.*
 import scala.collection.mutable
 import play.api.libs.json.Json
-
 import soot.G
 import soot.PackManager
 import soot.Scene
 import soot.SootMethod
 import soot.options.Options
 import soot.util.backend.ASMBackendUtils
+
+import java.nio.file.Paths
 
 object SootJCGAdapter extends JavaTestAdapter {
 
@@ -32,7 +33,7 @@ object SootJCGAdapter extends JavaTestAdapter {
         G.reset()
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getString("JDKPath")
+        val JDKPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
         val o = G.v().soot_options_Options()
@@ -43,7 +44,7 @@ object SootJCGAdapter extends JavaTestAdapter {
 
         // todo no-bodies-for-excluded in case of !analyzeJDK
 
-        val jreJars = JRELocation.getAllJREJars(JDKPath).map(_.getCanonicalPath)
+        val jreJars = JRELocation.getAllJREJars(JDKPath).map(_.toString)
 
         if(analyzeJDK && algorithm == "CHA"){
             o.set_process_dir((List(inputDirPath) ++ classPath ++ jreJars).asJava)

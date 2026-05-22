@@ -1,7 +1,8 @@
 import java.io.File
 import java.io.FileInputStream
-
 import play.api.libs.json.Json
+
+import java.nio.file.{Path, Paths}
 /**
  *
  * @author Michael Reif
@@ -9,7 +10,7 @@ import play.api.libs.json.Json
 object CompareToTamiflex {
 
     def main(args: Array[String]): Unit = {
-        var callGraphFile = ""
+        var callGraphPath: Path = null
         var tamiflexOutput = ""
         var typeFilter = ""
         var printMethods = false
@@ -17,8 +18,8 @@ object CompareToTamiflex {
 
         args.sliding(2, 2).toList.collect {
             case Array("--callgraph", cg) ⇒
-                assert(callGraphFile.isEmpty, "--callgraph is specified multiple times")
-                callGraphFile = cg
+                assert(callGraphPath == null, "--callgraph is specified multiple times")
+                callGraphPath = Paths.get(cg)
             case Array("--tamiflex", cg) ⇒
                 assert(tamiflexOutput.isEmpty, "--tamiflex is specified multiple times")
                 tamiflexOutput = cg
@@ -45,7 +46,7 @@ object CompareToTamiflex {
             println("1. processing call graph")
         }
 
-        val reachableMethods = parseCallGraph(callGraphFile).keySet.filter(tf)
+        val reachableMethods = Util.readReachableMethods(callGraphPath).toMap.keySet.filter(tf)
 
         if(debug) {
             println("2. processing tamiflex results")
@@ -72,10 +73,6 @@ object CompareToTamiflex {
         }
 
         println(s"\n\n$i of ${tamiflexResults.size} all methods are reachable")
-    }
-
-    private def parseCallGraph(callGraphFile: String) = {
-        EvaluationHelper.readReachableMethods(new File(callGraphFile)).toMap
     }
 
     def extractMethod(targetInfo: String, reflectionType: String) : Method = {

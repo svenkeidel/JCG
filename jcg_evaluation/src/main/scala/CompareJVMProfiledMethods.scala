@@ -1,7 +1,8 @@
 import java.io.File
 import java.io.FileInputStream
-
 import play.api.libs.json.Json
+
+import java.nio.file.{Path, Paths}
 /**
  *
  * @author Michael Reif
@@ -9,19 +10,19 @@ import play.api.libs.json.Json
 object CompareJVMProfiledMethods {
 
     def main(args: Array[String]): Unit = {
-        var callGraphFile = ""
+        var callGraphPath: Path = null
         var profile = ""
 
         args.sliding(2, 2).toList.collect {
             case Array("--callgraph", cg) ⇒
-                assert(callGraphFile.isEmpty, "--callgraph is specified multiple times")
-                callGraphFile = cg
+                assert(callGraphPath == null, "--callgraph is specified multiple times")
+                callGraphPath = Paths.get(cg)
             case Array("--profile", cg) ⇒
                 assert(profile.isEmpty, "--tamiflex is specified multiple times")
                 profile = cg
         }
 
-        val reachableMethods = parseCallGraph(callGraphFile).keySet
+        val reachableMethods = Util.readReachableMethods(callGraphPath).toMap.keySet
         val profiledMethods = parseProfileMethods(profile)
         val numProfiledMethods = profiledMethods.size
 
@@ -29,7 +30,7 @@ object CompareJVMProfiledMethods {
         println(s"reachable methods: ${reachableMethods.size}")
 
         val unreachable = profiledMethods.filter { m =>
-            reachableMethods.find(_.nameBasedEquals(m)).isEmpty
+            !reachableMethods.exists(_.nameBasedEquals(m))
         }
 
         println(s"unreachable: ${unreachable.size}")
@@ -38,10 +39,6 @@ object CompareJVMProfiledMethods {
         )
 
         println(s"\n\n ${numProfiledMethods - unreachable.size} of $numProfiledMethods all methods are reachable")
-    }
-
-    private def parseCallGraph(callGraphFile: String) = {
-        EvaluationHelper.readReachableMethods(new File(callGraphFile)).toMap
     }
 
     private def parseProfileMethods(profile: String): List[Method] = {

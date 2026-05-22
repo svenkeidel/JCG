@@ -132,11 +132,11 @@ void return_cg() {
             stringstream ss_callsite;
             stringstream ss_lineNumber;
             stringstream ss_callee;
-  	    
-  	    ss_caller << caller << "\n";
-  	    ss_callsite << callsite.loc<< "\n";
-  	    ss_lineNumber << lineNumber<< "\n";
-  	    ss_callee << callee<< "\n";
+
+            ss_caller << caller << "\n";
+            ss_callsite << callsite.loc<< "\n";
+            ss_lineNumber << lineNumber<< "\n";
+            ss_callee << callee<< "\n";
 	  	
             send(channel, ss_caller.str().c_str(), ss_caller.str().length(), 0);
             send(channel, ss_callsite.str().c_str(), ss_callsite.str().length(), 0);

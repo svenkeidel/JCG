@@ -1,3 +1,5 @@
+import java.nio.file.Path
+
 class AdapterOptions private (val options: Map[String, Any]) {
 
     def getOptionAs[T](key: String): Option[T] = options.get(key).flatMap {
@@ -6,6 +8,8 @@ class AdapterOptions private (val options: Map[String, Any]) {
     }
 
     def getString(key: String): String = getOptionAs[String](key).orNull
+
+    def getPath(key: String): Path = getOptionAs[Path](key).orNull
 
     def getBoolean(key: String): Boolean = getOptionAs[Boolean](key).getOrElse(false)
 
@@ -18,22 +22,22 @@ object AdapterOptions {
      * Creates a new AdapterOptions object for Java test adapters.
      */
     def makeJavaOptions(
-        mainClass:   String,
-        classPath:   Array[String],
-        JDKPath:     String,
-        analyzeJDK:  Boolean,
-        target:      String        = "",
-        jvmArgs:     Array[String] = Array.empty,
-        programArgs: Array[String] = Array.empty
+                           mainClass:   String,
+                           classPath:   Array[String],
+                           JDKPath:     Path,
+                           analyzeJDK:  Boolean,
+                           target:      String        = "",
+                           jvmArgs:     Array[String] = Array.empty,
+                           analysisArguments: Array[String] = Array.empty
     ): AdapterOptions = {
         new AdapterOptions(Map(
             "mainClass" -> mainClass,
             "classPath" -> classPath,
             "JDKPath" -> JDKPath,
-            "analyzeJDK" -> analyzeJDK,
             "target" -> target,
             "jvmArgs" -> jvmArgs,
-            "programArgs" -> programArgs
+            "analyzeJDK" -> analyzeJDK,
+            "analysisArgs" -> analysisArguments
         ))
     }
 

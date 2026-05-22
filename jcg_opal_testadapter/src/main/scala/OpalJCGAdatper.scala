@@ -1,12 +1,10 @@
 import java.io.File
 import java.io.Writer
 import java.net.URL
-import scala.collection.JavaConverters._
-
+import scala.collection.JavaConverters.*
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import com.typesafe.config.ConfigValueFactory
-
 import org.opalj.br.DeclaredMethod
 import org.opalj.br.ClassType
 import org.opalj.br.analyses.DeclaredMethods
@@ -33,6 +31,8 @@ import org.opalj.br.fpcf.properties.cg.Callees
 import org.opalj.br.fpcf.properties.cg.NoCallees
 import org.opalj.br.fpcf.properties.cg.NoCalleesDueToNotReachableMethod
 
+import java.nio.file.Paths
+
 /**
  * A [[JavaTestAdapter]] for the FPCF-based call graph analyses of OPAL.
  *
@@ -53,7 +53,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
     ): Long = {
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getString("JDKPath")
+        val JDKPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
         val before = System.nanoTime()
@@ -102,15 +102,10 @@ object OpalJCGAdatper extends JavaTestAdapter {
         val cfReader = JavaClassFileReader(using theConfig = config)
         val targetClassFiles = cfReader.ClassFiles(new File(inputDirPath))
         val cpClassFiles = cfReader.AllClassFiles(classPath.map(new File(_)))
-        val jreJars = JRELocation.getAllJREJars(JDKPath)
+        val jreJars = JRELocation.getAllJREJars(JDKPath).map(_.toFile)
         val jre = cfReader.AllClassFiles(jreJars)
         val allClassFiles = targetClassFiles ++ cpClassFiles ++ (if (analyzeJDK) jre else Seq.empty)
-
-        val libClassFiles =
-            if (analyzeJDK)
-                Seq.empty
-            else
-                Project.JavaLibraryClassFileReader.AllClassFiles(jreJars)
+        val libClassFiles = if (analyzeJDK) Seq.empty else Project.JavaLibraryClassFileReader.AllClassFiles(jreJars)
 
         val project: Project[URL] = Project(
             allClassFiles,

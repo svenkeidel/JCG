@@ -1,8 +1,9 @@
 
 import java.io.File
 import java.io.FileInputStream
-
 import play.api.libs.json.Json
+
+import java.nio.file.{Path, Paths}
 
 /**
  * @author Michael Reif
@@ -10,8 +11,8 @@ import play.api.libs.json.Json
 object CompareCallSites {
 
     def main(args: Array[String]): Unit = {
-        var cg1Path = ""
-        var cg2Path = ""
+        var cg1Path: Path = null
+        var cg2Path: Path = null
 
         var methodName = ""
         var declaringClassName = ""
@@ -20,11 +21,11 @@ object CompareCallSites {
 
         args.sliding(2, 2).toList.collect {
             case Array("--input1", cg) ⇒
-                assert(cg1Path.isEmpty, "--input1 is specified multiple times")
-                cg1Path = cg
+                assert(cg1Path == null, "--input1 is specified multiple times")
+                cg1Path = Paths.get(cg)
             case Array("--input2", cg) ⇒
-                assert(cg2Path.isEmpty, "--input2 is specified multiple times")
-                cg2Path = cg
+                assert(cg2Path == null, "--input2 is specified multiple times")
+                cg2Path = Paths.get(cg)
             case Array("--name", name) ⇒
                 methodName = name
             case Array("--class", declClass) ⇒
@@ -33,8 +34,8 @@ object CompareCallSites {
                 sizeGap = gap.toInt
         }
 
-        val cg1 = EvaluationHelper.readReachableMethods(new File(cg1Path)).toMap
-        val cg2 = EvaluationHelper.readReachableMethods(new File(cg2Path)).toMap
+        val cg1 = Util.readReachableMethods(cg1Path).toMap
+        val cg2 = Util.readReachableMethods(cg2Path).toMap
 
         val commonReachableMethods = cg1.filter(m ⇒ cg2.contains(m._1)).keySet
 

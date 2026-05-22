@@ -1,9 +1,8 @@
 import java.io.File
 import java.io.Writer
-import scala.collection.JavaConverters._
+import scala.collection.JavaConverters.*
 import scala.collection.mutable
 import play.api.libs.json.Json
-
 import qilin.driver.PTAFactory
 import qilin.driver.PTAPattern
 import qilin.pta.PTAConfig
@@ -28,6 +27,8 @@ import sootup.core.types.VoidType
 import sootup.java.bytecode.frontend.inputlocation.JavaClassPathAnalysisInputLocation
 import sootup.java.core.views.JavaView
 
+import java.nio.file.Paths
+
 object SootUpJCGAdapter extends JavaTestAdapter {
 
     private val CHA = "CHA"
@@ -46,14 +47,14 @@ object SootUpJCGAdapter extends JavaTestAdapter {
     ): Long = {
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getString("JDKPath")
+        val JDKPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
         val classPathString = if(classPath.isEmpty) "" else classPath.mkString(File.pathSeparator, File.pathSeparator, "")
 
         val cp =
             if(analyzeJDK || !Seq(CHA, RTA).contains(algorithm)){
-                val jreJars = JRELocation.getAllJREJars(JDKPath).map(_.getCanonicalPath)
+                val jreJars = JRELocation.getAllJREJars(JDKPath)
                 val jreJarString = if(jreJars.isEmpty) "" else jreJars.mkString(File.pathSeparator, File.pathSeparator, "")
                 inputDirPath + classPathString + jreJarString
             } else {

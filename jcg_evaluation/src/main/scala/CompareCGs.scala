@@ -1,11 +1,12 @@
 import java.io.File
 import java.io.FileInputStream
 import java.util
-
 import play.api.libs.json.Json
+
+import java.nio.file.{Path, Paths}
 import scala.collection.mutable
-import scala.jdk.CollectionConverters._
-import java.util.{HashSet ⇒ JHashSet}
+import scala.jdk.CollectionConverters.*
+import java.util.HashSet as JHashSet
 
 /**
  * @author Dominik Helm
@@ -15,8 +16,8 @@ import java.util.{HashSet ⇒ JHashSet}
 object CompareCGs {
 
     def main(args: Array[String]): Unit = {
-        var cg1Path = ""
-        var cg2Path = ""
+        var cg1Path: Path = null
+        var cg2Path: Path = null
         var appPackages = List.empty[String]
 
         var showMethodPrecisionRecall = false
@@ -33,11 +34,11 @@ object CompareCGs {
 
         args.sliding(2, 1).toList.collect {
             case Array("--input1", cg) ⇒
-                assert(cg1Path.isEmpty, "--input1 is specified multiple times")
-                cg1Path = cg
+                assert(cg1Path == null, "--input1 is specified multiple times")
+                cg1Path = Paths.get(cg)
             case Array("--input2", cg) ⇒
-                assert(cg2Path.isEmpty, "--input2 is specified multiple times")
-                cg2Path = cg
+                assert(cg2Path == null, "--input2 is specified multiple times")
+                cg2Path = Paths.get(cg)
             case Array("--package", pkg) ⇒
                 appPackages ::= pkg
             case Array("--showPrecisionRecall", preRec) ⇒
@@ -66,8 +67,8 @@ object CompareCGs {
 
         }
 
-        val cg1 = EvaluationHelper.readReachableMethods(new File(cg1Path)).toMap
-        val cg2 = EvaluationHelper.readReachableMethods(new File(cg2Path)).toMap
+        val cg1 = Util.readReachableMethods(cg1Path).toMap
+        val cg2 = Util.readReachableMethods(cg2Path).toMap
 
         /*
         for {

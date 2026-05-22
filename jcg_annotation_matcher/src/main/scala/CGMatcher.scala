@@ -7,6 +7,7 @@ import org.opalj.log.GlobalLogContext
 import org.opalj.log.OPALLogger
 import play.api.libs.json.Json
 
+import java.nio.file.Path
 import java.util.zip.GZIPInputStream
 import scala.util.boundary
 import scala.util.boundary.break
@@ -29,7 +30,7 @@ object CGMatcher {
      */
     def matchCallSites(
         projectSpec:         ProjectSpecification,
-        JREPath:             String,
+        JREPath:             Path,
         parent:              File,
         callGraph:           Map[Method, Set[CallSite]],
         verbose:             Boolean              = false
@@ -37,7 +38,7 @@ object CGMatcher {
         if (!verbose)
             OPALLogger.updateLogger(GlobalLogContext, new DevNullLogger())
 
-        val jreFiles = JRELocation.getAllJREJars(JREPath)
+        val jreFiles = JRELocation.getAllJREJars(JREPath).map(_.toFile)
         implicit val p: SomeProject = Project(
             Array(projectSpec.target(parent)) ++ projectSpec.allClassPathEntryFiles(parent) ++ jreFiles,
             Array.empty[File]
