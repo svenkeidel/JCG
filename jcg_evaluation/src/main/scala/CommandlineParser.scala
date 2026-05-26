@@ -36,7 +36,7 @@ case class CommandlineOptions(
 }
 
 object CommandlineParser {
-    val ALL_JAVA_ADAPTERS: List[JavaTestAdapter] = List(DynamicJCGAdapter, DoopAdapter, OpalJCGAdatper, SootJCGAdapter, SootUpJCGAdapter, /*SenecaJCGAdapter,*/ Tai_e_JCG_Adapter, WalaJCGAdapter)
+    val ALL_JAVA_ADAPTERS: List[JavaTestAdapter] = List(DynamicJCGAdapter, DoopAdapter, OpalJCGAdatper, SootJCGAdapter, SootUpJCGAdapter, /*SenecaJCGAdapter,*/ Tai_e_JCG_Adapter, WalaJCGAdapter, ValueCG_JCG_Adapter)
     val ALL_JS_ADAPTERS: List[JSTestAdapter] = List(JSCallGraphAdapter, Code2flowCallGraphAdapter, TAJSJCGAdapter, JellyCallGraphAdapter)
     val ALL_PY_ADAPTERS: List[PyTestAdapter] = List(PyCGAdapter, PyanAdapter, Code2flowPyCallGraphAdapter, JarvisCallGraphAdapter)
     private val ALL_ADAPTERS: List[TestAdapter] = ALL_JS_ADAPTERS ++ ALL_JAVA_ADAPTERS ++ ALL_PY_ADAPTERS
@@ -78,14 +78,20 @@ object CommandlineParser {
                 .maxOccurs(1).optional(),
             opt[String]("adapter")
                 .action { (adapterName, c) =>
-                    val adapter = ALL_ADAPTERS.find(_.frameworkName.toLowerCase == adapterName.toLowerCase)
-                    if (adapter.isEmpty) failure("The given <adapter> is not yet registered as valid adapter.")
-                    val newAdapters = c.adapters.::(adapter.get)
-                    c.copy(adapters = newAdapters)
+                    ALL_ADAPTERS.find(_.frameworkName.toLowerCase == adapterName.toLowerCase) match {
+                        case Some(adapter) => c.copy(adapters = adapter :: c.adapters)
+                        case None => c
+                    }
                 }
                 .text("Run the pipeline for a selecton of adapters. (e.g., the <OPAL> to run the OPAL's algorithms)")
                 .valueName("adapter")
                 .optional()
+                .validate(adapterName =>
+                    if(! ALL_ADAPTERS.exists(_.frameworkName.toLowerCase == adapterName.toLowerCase))
+                        failure(s"Adapter $adapterName not registered in ${ALL_ADAPTERS.map(adapter => adapter.frameworkName)}")
+                    else
+                        success
+                )
                 .unbounded(),
 
             opt[String]("language")
