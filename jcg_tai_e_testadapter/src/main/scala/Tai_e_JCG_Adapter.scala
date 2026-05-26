@@ -37,7 +37,7 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
                 case _ => throw new RuntimeException("Invalid algorithm: " + algorithm)
             }
 
-            val taieJarPath = Paths.get("jcg_tai_e_testadapter", "src", "main", "resources", "tai-e-all-0.5.2.jar")
+            val taieJarPath = Paths.get("jcg_tai_e_testadapter", "src", "main", "resources", "tai-e-all-0.5.2.jar").toAbsolutePath
 
             val cp = ArraySeq.ofRef(classPath).prepended(target)
 
