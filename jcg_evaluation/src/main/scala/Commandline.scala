@@ -76,6 +76,7 @@ object Commandline {
                             projectSpec.main.orNull,
                             projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
                             jreLocations(projectSpec.java),
+                            target = projectSpec.target(options.projectsDir.toFile).toString,
                             analyzeJDK = options.analyzeJdk,
                             analysisArguments = options.analysesArgs.split(" ")
                         )
@@ -83,9 +84,7 @@ object Commandline {
                 } catch {
                     case e: Throwable =>
                         println(s"exception in project ${projectSpec.name}")
-                        if (options.debug) {
-                            e.printStackTrace()
-                        }
+                        e.printStackTrace()
                         -1
                 }
             }

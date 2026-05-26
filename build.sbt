@@ -1,4 +1,5 @@
 import sbt.Keys.libraryDependencies
+import sbtassembly.AssemblyPlugin.autoImport.ShadeRule
 
 ThisBuild / javacOptions ++= Seq("-encoding", "utf8", "-parameters")
 
@@ -129,7 +130,6 @@ lazy val jcg_doop_testadapter = project.settings(
 lazy val jcg_tai_e_testadapter = project.settings(
     commonSettings,
     name := "JCG Tai-E Test Adapter",
-    libraryDependencies += "net.pascal-lab" % "tai-e" % "0.5.2",
     libraryDependencies += "commons-io" % "commons-io" % commonsIoVersion,
     assembly / aggregate := false,
     publishArtifact := false
