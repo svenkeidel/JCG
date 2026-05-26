@@ -143,7 +143,7 @@ public class ValueCG_TestAdapterImpl {
 	 * @return The runtime in nanoseconds.
 	 */
 	public long serializeCG(String algorithm, String inputDirPath, Writer output, String mainClass, String[] classPath,
-			String JDKPath, boolean analyzeJDK) throws Exception {
+			Path JDKPath, boolean analyzeJDK) throws Exception {
 
 		System.out.println("algorithm=" + algorithm + ", inputDirPath=" + inputDirPath + ", output=" + output
 				+ ", mainClass=" + mainClass + ", classPath=" + java.util.Arrays.toString(classPath) + ", JDKPath="
@@ -315,7 +315,7 @@ public class ValueCG_TestAdapterImpl {
 	}
 
 	private long generateCGforFile(File inputFile, String algorithm, String runnerDir, String configDir, Path outDir,
-			String mainClass, String[] classPath, String jdkPath, boolean analyzeJdk) throws Exception {
+			String mainClass, String[] classPath, Path jdkPath, boolean analyzeJdk) throws Exception {
 
 		// Create output directory for this file
 		String testCaseName = readTestCaseName(inputFile);

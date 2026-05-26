@@ -16,7 +16,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
       output,
       adapterOptions.getString("mainClass"),
       adapterOptions.getStringArray("classPath"),
-      adapterOptions.getString("JDKPath"),
+      adapterOptions.getPath("JDKPath"),
       adapterOptions.getBoolean("analyzeJDK")
     )
   }
