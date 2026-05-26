@@ -181,7 +181,7 @@ object Commandline {
             edgeInclude = options.edgesInclude
         )
 
-        val outputPath = callGraphDirectory.resolve(s"$testCase-precision-recall.json")
+        val outputPath = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-precision-recall.json")
 
         Files.write(
             outputPath,

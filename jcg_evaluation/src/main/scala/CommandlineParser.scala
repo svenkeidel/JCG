@@ -27,6 +27,7 @@ case class CommandlineOptions(
                                  analysesArgs:    String            = "",
 
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
+                                 comparisonName:            String  = "",
                                  reachableMethodsInclude:   Regex   = Regex(".*"),
                                  edgesInclude:              Regex   = Regex(".* -> .*")
 ) {
@@ -146,6 +147,12 @@ object CommandlineParser {
                     opt[String]("truth-callgraph-directory")
                         .action((truthCallGraphDirectory, c) => c.copy(truthCallGraphsDirectory = Paths.get(truthCallGraphDirectory)))
                         .text("Directory that contains the truth call graphs used for computing precision and recall")
+                        .maxOccurs(1)
+                        .required(),
+                    opt[String]("comparison-name")
+                        .action((comparison, c) => c.copy(comparisonName = comparison))
+                        .text("Name for the precision/recall measurement. The name is appended to the json file name that contains the precision/recall numbers.")
+                        .maxOccurs(1)
                         .required(),
                     opt[String]("reachable-methods-include")
                         .action((reachableMethodsInclude, c) => c.copy(reachableMethodsInclude = Regex(reachableMethodsInclude)))
