@@ -48,17 +48,19 @@ object CommandlineParser {
             programName("Java Call Graph Tests"),
             head("JCG", "0.4.0"),
 
-            opt[Path]("projects-directory")
-                .action((dir, c) => c.copy(projectsDir = dir))
+            opt[String]("projects-directory")
+                .action((dir, c) => c.copy(projectsDir = Paths.get(dir)))
                 .text("Defines the directory with the configuration files of the projects.")
                 .required().maxOccurs(1)
                 .validate { dir =>
-                    if (Files.exists(dir) && Files.isDirectory(dir)) success
-                    else failure(s"Value ${dir.toAbsolutePath} must exist and must be a directory.")
+                    val path = Paths.get(dir)
+                    if (Files.exists(path) && Files.isDirectory(path)) success
+                    else failure(s"Value ${path.toAbsolutePath} must exist and must be a directory.")
                 }
                 .validate { dir =>
-                    if (FileOperations.hasFilesDeep(dir.toFile, ".conf", ".js", ".py")) success
-                    else failure(s"${dir.toAbsolutePath} does not contain *.conf, *.js or *.py files")
+                    val path = Paths.get(dir)
+                    if (FileOperations.hasFilesDeep(path.toFile, ".conf", ".js", ".py")) success
+                    else failure(s"${path.toAbsolutePath} does not contain *.conf, *.js or *.py files")
                 },
             opt[String]("project-prefix")
                 .action((prefix, c) => c.copy(projectFilter = prefix))

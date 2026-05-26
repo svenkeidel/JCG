@@ -349,15 +349,11 @@ public class ValueCG_TestAdapterImpl {
 
 		// Execute analysis process
 		ProcessBuilder pb = new ProcessBuilder("./AnalysisStandaloneRunner", "--configfile", serverConf.toString(),	inputFile.getAbsolutePath());
+		pb.inheritIO();
 		pb.directory(new File(runnerDir));
 		pb.redirectErrorStream(true);
 
-		Process process = pb.start();
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-			reader.lines().forEach(System.out::println);
-		}
-
-		int exitCode = process.waitFor();
+		int exitCode = pb.start().waitFor();
 		if (exitCode != 0) {
 			throw new RuntimeException("Analysis failed with exit code: " + exitCode);
 		}
