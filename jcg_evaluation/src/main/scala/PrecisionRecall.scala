@@ -21,6 +21,7 @@ case class PrecisionRecall(
 
     val methodsTruePositive: Set[Method] = methodsPredictedPositive.intersect(methodsActualPositive)
     val methodsFalsePositive: Set[Method] = methodsPredictedPositive -- methodsActualPositive
+    val methodsFalseNegative: Set[Method] = methodsActualPositive -- methodsPredictedPositive
 
     val methodsPrecision: BigDecimal =
         if(methodsPredictedPositive.isEmpty)
@@ -39,9 +40,10 @@ case class PrecisionRecall(
     // Edges
     val edgesActualPositive: Set[Edge] = toEdges(actualCallGraph)
     val edgesPredictedPositive: Set[Edge] = toEdges(predictedCallGraph)
+
     val edgesTruePositive: Set[Edge] = edgesPredictedPositive.intersect(edgesActualPositive)
     val edgesFalsePositive: Set[Edge] = edgesPredictedPositive -- edgesActualPositive
-
+    val edgesFalseNegative: Set[Edge] = edgesActualPositive -- edgesPredictedPositive
 
     val edgesPrecision: BigDecimal =
         if(edgesPredictedPositive.isEmpty)
