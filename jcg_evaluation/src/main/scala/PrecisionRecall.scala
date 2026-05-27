@@ -36,15 +36,6 @@ case class PrecisionRecall(
 
     val methodsF1Score: BigDecimal = harmonicMean(methodsPrecision, methodsRecall)
 
-
-    case class Edge(caller: Method, callerPC: Option[Int], target: Method, declaredTarget: Method):
-        override def hashCode(): Int = (caller, callerPC, target).hashCode()
-
-        override def equals(obj: Any): Boolean =
-            obj match
-                case other: Edge => (this.caller, this.callerPC, this.target).equals((other.caller, other.callerPC, other.target))
-                case _ => false
-
     // Edges
     val edgesActualPositive: Set[Edge] = toEdges(actualCallGraph)
     val edgesPredictedPositive: Set[Edge] = toEdges(predictedCallGraph)
@@ -72,7 +63,7 @@ case class PrecisionRecall(
             callSite <- callSites;
             target <- callSite.targets
             if(edgeInclude.matches(s"${caller.declaringClass} -> ${target.declaringClass}"))
-        } yield(Edge(caller = caller, callerPC = None, target = target, declaredTarget = callSite.declaredTarget))
+        } yield(Edge(caller = caller, callerPC = callSite.pc, target = target))
         result.toSet
 
 
@@ -85,3 +76,6 @@ case class PrecisionRecall(
         else
             (2*x*y) / (x + y)
     }
+
+
+case class Edge(caller: Method, callerPC: Option[Int], target: Method)

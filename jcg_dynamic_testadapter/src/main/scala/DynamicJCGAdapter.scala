@@ -41,7 +41,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         val edges = mutable.Map[Method, mutable.Map[(Int, Int), mutable.Set[Method]]]()
 
         var args = List(javaPath)
-        args ++= jvmArgs
+        args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
         args :+= s"-agentpath:$agentPath=$agentArgs"
         args ++= List("-cp", classPath.mkString(":"))
         args :+= mainClass
