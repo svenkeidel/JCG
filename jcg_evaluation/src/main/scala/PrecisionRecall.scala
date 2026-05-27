@@ -1,4 +1,4 @@
-import play.api.libs.json.Json
+import play.api.libs.json.{Json, Reads, Writes}
 
 import java.io.{File, FileInputStream}
 import java.nio.file.{Path, Paths}
@@ -81,3 +81,9 @@ case class PrecisionRecall(
 
 
 case class Edge(caller: Method, callerPC: Option[Int], target: Method)
+
+object Edge {
+    implicit val methodReads: Reads[Edge] = Json.reads[Edge]
+
+    implicit val methodWrites: Writes[Edge] = Json.writes[Edge]
+}

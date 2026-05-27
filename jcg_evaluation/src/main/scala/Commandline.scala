@@ -182,32 +182,53 @@ object Commandline {
         )
 
         val outputPath = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-precision-recall.json")
-
         Files.write(
             outputPath,
             Json.prettyPrint(
                 Json.obj(
                     "methods" ->
                         Json.obj(
+                            "precision" -> precisionRecall.methodsPrecision,
+                            "recall" -> precisionRecall.methodsRecall,
+                            "f1-score" -> precisionRecall.methodsF1Score,
                             "true_positive" -> precisionRecall.methodsTruePositive.size,
                             "false_positive" -> precisionRecall.methodsFalsePositive.size,
                             "false_negative" -> precisionRecall.methodsFalseNegative.size,
-                            "precision" -> precisionRecall.methodsPrecision,
-                            "recall" -> precisionRecall.methodsRecall,
-                            "f1-score" -> precisionRecall.methodsF1Score
                         ),
                     "edges" ->
                         Json.obj(
-                            "true_positive" -> precisionRecall.edgesTruePositive.size,
-                            "false_positive" -> precisionRecall.edgesFalsePositive.size,
-                            "false_negative" -> precisionRecall.edgesFalseNegative.size,
                             "precision" -> precisionRecall.edgesPrecision,
                             "recall" -> precisionRecall.edgesRecall,
-                            "f1-score" -> precisionRecall.edgesF1Score
+                            "f1-score" -> precisionRecall.edgesF1Score,
+                            "true_positive" -> precisionRecall.edgesTruePositive.size,
+                            "false_positive" -> precisionRecall.edgesFalsePositive.size,
+                            "false_negative" -> precisionRecall.edgesFalseNegative.size
                         )
                 )
             ).getBytes(StandardCharsets.UTF_8)
         )
+
+        val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-classification.json.gz")
+        Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
+            writer.write(
+                Json.prettyPrint(
+                    Json.obj(
+                        "methods" ->
+                            Json.obj(
+                                "true_positive" -> Json.toJson(precisionRecall.methodsTruePositive),
+                                "false_positive" -> Json.toJson(precisionRecall.methodsFalsePositive),
+                                "false_negative" -> Json.toJson(precisionRecall.methodsFalseNegative)
+                            ),
+                        "edges" ->
+                            Json.obj(
+                                "true_positive" -> Json.toJson(precisionRecall.edgesTruePositive),
+                                "false_positive" -> Json.toJson(precisionRecall.edgesFalsePositive),
+                                "false_negative" -> Json.toJson(precisionRecall.edgesFalseNegative)
+                            )
+                    )
+                ).getBytes(StandardCharsets.UTF_8)
+            )
+        }
     }
 
 
