@@ -78,7 +78,7 @@ object Commandline {
                             jreLocations(projectSpec.java),
                             target = projectSpec.target(options.projectsDir.toFile).toString,
                             analyzeJDK = options.analyzeJdk,
-                            analysisArguments = options.analysesArgs.split(" ")
+                            analysisArguments = options.analysisArgs.split(" ")
                         )
                     )
                 } catch {
@@ -189,12 +189,18 @@ object Commandline {
                 Json.obj(
                     "methods" ->
                         Json.obj(
+                            "true_positive" -> precisionRecall.methodsTruePositive.size,
+                            "false_positive" -> precisionRecall.methodsFalsePositive.size,
+                            "false_negative" -> precisionRecall.methodsFalseNegative.size,
                             "precision" -> precisionRecall.methodsPrecision,
                             "recall" -> precisionRecall.methodsRecall,
                             "f1-score" -> precisionRecall.methodsF1Score
                         ),
                     "edges" ->
                         Json.obj(
+                            "true_positive" -> precisionRecall.edgesTruePositive.size,
+                            "false_positive" -> precisionRecall.edgesFalsePositive.size,
+                            "false_negative" -> precisionRecall.edgesFalseNegative.size,
                             "precision" -> precisionRecall.edgesPrecision,
                             "recall" -> precisionRecall.edgesRecall,
                             "f1-score" -> precisionRecall.edgesF1Score

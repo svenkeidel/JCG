@@ -30,7 +30,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         var classPath = List.from(adapterOptions.getStringArray("classPath"))
         val JDKPath = adapterOptions.getPath("JDKPath")
         val jvmArgs = adapterOptions.getStringArray("jvmArgs")
-        val programArgs = adapterOptions.getStringArray("programArgs")
+        val programArgs = adapterOptions.getStringArray("analysisArgs")
 
         val javaPath = JDKPath.getParent.toAbsolutePath.toString + "/bin/java"
         val agentPath = Paths.get("jcg_dynamic_testadapter", "src", "main", "resources", "DynamicCG.so")

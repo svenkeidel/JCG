@@ -24,7 +24,7 @@ case class CommandlineOptions(
                                  parallel:        Boolean           = false,
                                  language:        String            = "",
                                  analyzeJdk:      Boolean           = false,
-                                 analysesArgs:    String            = "",
+                                 analysisArgs:    String            = "",
 
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
                                  comparisonName:            String  = "",
@@ -112,8 +112,8 @@ object CommandlineParser {
                 .action((_,c) => c.copy(action = Action.Analyze))
                 .text("run call graph analyses on projects")
                 .children(
-                    opt[String]("analyses-args")
-                        .action((args, c) => c.copy(analysesArgs = args))
+                    opt[String]("analysis-args")
+                        .action((args, c) => c.copy(analysisArgs = args))
                         .text("additional arguments passed to the call graph analyses")
                         .valueName("args"),
                     opt[String]("timeout")
