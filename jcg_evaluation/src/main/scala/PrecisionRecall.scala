@@ -9,78 +9,69 @@ import scala.jdk.CollectionConverters.*
 import scala.math.*
 import scala.util.matching.Regex
 
+case class Classification[X](
+    actualPositive: Set[X],
+    predictedPositive: Set[X]
+):
+    val truePositive: Set[X] = predictedPositive.intersect(actualPositive)
+    val falsePositive: Set[X] = predictedPositive -- actualPositive
+    val falseNegative: Set[X] = actualPositive -- predictedPositive
+
+    val precision: BigDecimal =
+        if(predictedPositive.isEmpty)
+            if(actualPositive.isEmpty) 1 else 0
+        else
+            BigDecimal(truePositive.size) / BigDecimal(predictedPositive.size)
+
+    val recall: BigDecimal =
+        if (actualPositive.isEmpty)
+            1
+        else
+            BigDecimal(truePositive.size) / BigDecimal(actualPositive.size)
+
+    val f1Score: BigDecimal = harmonicMean(precision, recall)
+
+    private def harmonicMean(x: BigDecimal, y: BigDecimal): BigDecimal = {
+        if (x == 0 && y == 0)
+            0
+        else
+            (2 * x * y) / (x + y)
+    }
+
 case class PrecisionRecall(
     actualCallGraph: Map[Method, Set[CallSite]],
     predictedCallGraph: Map[Method, Set[CallSite]],
     reachableMethodsInclude: Regex,
     edgeInclude: Regex
 ):
-    // Methods
-    val methodsActualPositive: Set[Method] = actualCallGraph.keySet.filter(method => matchesPackageFilter(method.declaringClass))
-    val methodsPredictedPositive: Set[Method] = predictedCallGraph.keySet.filter(method => matchesPackageFilter(method.declaringClass))
 
-    val methodsTruePositive: Set[Method] = methodsPredictedPositive.intersect(methodsActualPositive)
-    val methodsFalsePositive: Set[Method] = methodsPredictedPositive -- methodsActualPositive
-    val methodsFalseNegative: Set[Method] = methodsActualPositive -- methodsPredictedPositive
+    val methods: Classification[Method] = Classification[Method](
+        actualCallGraph.keySet.filter(method => reachableMethodsInclude.matches(method.declaringClass)),
+        predictedCallGraph.keySet.filter(method => reachableMethodsInclude.matches(method.declaringClass))
+    )
 
-    val methodsPrecision: BigDecimal =
-        if(methodsPredictedPositive.isEmpty)
-            if(methodsActualPositive.isEmpty) 1 else 0
-        else
-            BigDecimal(methodsTruePositive.size) / BigDecimal(methodsPredictedPositive.size)
+    val edges: Classification[Edge] = Classification[Edge](
+        toEdges(actualCallGraph, withCallSiteLineNumber = false),
+        toEdges(predictedCallGraph, withCallSiteLineNumber = false)
+    )
 
-    val methodsRecall: BigDecimal =
-        if(methodsActualPositive.isEmpty)
-            1
-        else
-            BigDecimal(methodsTruePositive.size) / BigDecimal(methodsActualPositive.size)
+    val edgesWithCallSiteLineNumbers: Classification[Edge] = Classification[Edge](
+        toEdges(actualCallGraph, withCallSiteLineNumber = true),
+        toEdges(predictedCallGraph, withCallSiteLineNumber = true)
+    )
 
-    val methodsF1Score: BigDecimal = harmonicMean(methodsPrecision, methodsRecall)
-
-    // Edges
-    val edgesActualPositive: Set[Edge] = toEdges(actualCallGraph)
-    val edgesPredictedPositive: Set[Edge] = toEdges(predictedCallGraph)
-
-    val edgesTruePositive: Set[Edge] = edgesPredictedPositive.intersect(edgesActualPositive)
-    val edgesFalsePositive: Set[Edge] = edgesPredictedPositive -- edgesActualPositive
-    val edgesFalseNegative: Set[Edge] = edgesActualPositive -- edgesPredictedPositive
-
-    val edgesPrecision: BigDecimal =
-        if(edgesPredictedPositive.isEmpty)
-            if(edgesActualPositive.isEmpty) 1 else 0
-        else
-            BigDecimal(edgesTruePositive.size) / BigDecimal(edgesPredictedPositive.size)
-
-    val edgesRecall: BigDecimal =
-        if(edgesActualPositive.isEmpty)
-            1
-        else
-            BigDecimal(edgesTruePositive.size) / BigDecimal(edgesActualPositive.size)
-
-    val edgesF1Score: BigDecimal = harmonicMean(edgesPrecision, edgesRecall)
-
-    private def toEdges(cg: Map[Method, Set[CallSite]]): Set[Edge] =
+    private def toEdges(cg: Map[Method, Set[CallSite]], withCallSiteLineNumber: Boolean): Set[Edge] =
         val result = for {
             (caller, callSites) <- cg;
             callSite <- callSites;
             target <- callSite.targets
             if(edgeInclude.matches(s"${caller.declaringClass} -> ${target.declaringClass}"))
-        } yield(Edge(caller = caller, callerPC = callSite.pc, target = target))
+            line = if(withCallSiteLineNumber) Some(callSite.line) else None
+        } yield(Edge(caller = caller, line = line, target = target))
         result.toSet
 
 
-    private def matchesPackageFilter(declaringClass: String): Boolean =
-        reachableMethodsInclude.matches(declaringClass)
-
-    private def harmonicMean(x: BigDecimal, y: BigDecimal): BigDecimal = {
-        if(x == 0 && y == 0)
-            0
-        else
-            (2*x*y) / (x + y)
-    }
-
-
-case class Edge(caller: Method, callerPC: Option[Int], target: Method)
+case class Edge(caller: Method, line: Option[Int], target: Method)
 
 object Edge {
     implicit val methodReads: Reads[Edge] = Json.reads[Edge]

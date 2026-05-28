@@ -107,7 +107,7 @@ object Commandline {
     private def assessCallGraph(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
         val callGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
 
-        val assessment = options.language match {
+        val assessment: Assessment = options.language match {
             case "java" =>
                 val callGraph = Util.readReachableMethods(callGraphPath).toMap
 
@@ -120,14 +120,14 @@ object Commandline {
                 )
             case "javascript" | "python" =>
 
-                if(! Files.exists(callGraphPath))
+                if (!Files.exists(callGraphPath))
                     throw IllegalArgumentException(s"Call graph file $callGraphPath does not exist.")
 
                 val callGraph = new AdapterCG(callGraphPath.toFile)
 
                 val expectedCallGraphPath = options.projectsDir.resolve(s"$testCase.json")
 
-                if(! Files.exists(expectedCallGraphPath))
+                if (!Files.exists(expectedCallGraphPath))
                     throw IllegalArgumentException(s"Call graph file $expectedCallGraphPath does not exist.")
 
                 val expectedCG = new ExpectedCG(expectedCallGraphPath.toFile)
@@ -167,68 +167,89 @@ object Commandline {
     }
 
     def computePrecisionRecall(options: CommandlineOptions, callGraphDirectory: Path, testCase: String): Unit = {
-        val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
-        val predictedCallGraph = Util.readReachableMethods(predictedCallGraphPath).toMap
+        try {
+            val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
+            val predictedCallGraph = Util.readReachableMethods(predictedCallGraphPath).toMap
 
-        val truthCallGraphsDirectory = options.truthCallGraphsDirectory.resolve("Dynamic", "Dynamic")
-        val truthCallGraphPath = Util.findCallGraphFile(truthCallGraphsDirectory, testCase)
-        val truthCallGraph = Util.readReachableMethods(truthCallGraphPath).toMap
+            val truthCallGraphsDirectory = options.truthCallGraphsDirectory.resolve("Dynamic", "Dynamic")
+            val truthCallGraphPath = Util.findCallGraphFile(truthCallGraphsDirectory, testCase)
+            val truthCallGraph = Util.readReachableMethods(truthCallGraphPath).toMap
 
-        val precisionRecall = PrecisionRecall(
-            actualCallGraph = truthCallGraph,
-            predictedCallGraph = predictedCallGraph,
-            reachableMethodsInclude = options.reachableMethodsInclude,
-            edgeInclude = options.edgesInclude
-        )
+            val precisionRecall = PrecisionRecall(
+                actualCallGraph = truthCallGraph,
+                predictedCallGraph = predictedCallGraph,
+                reachableMethodsInclude = options.reachableMethodsInclude,
+                edgeInclude = options.edgesInclude
+            )
 
-        val outputPath = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-precision-recall.json")
-        Files.write(
-            outputPath,
-            Json.prettyPrint(
-                Json.obj(
-                    "methods" ->
-                        Json.obj(
-                            "precision" -> precisionRecall.methodsPrecision,
-                            "recall" -> precisionRecall.methodsRecall,
-                            "f1-score" -> precisionRecall.methodsF1Score,
-                            "true_positive" -> precisionRecall.methodsTruePositive.size,
-                            "false_positive" -> precisionRecall.methodsFalsePositive.size,
-                            "false_negative" -> precisionRecall.methodsFalseNegative.size,
-                        ),
-                    "edges" ->
-                        Json.obj(
-                            "precision" -> precisionRecall.edgesPrecision,
-                            "recall" -> precisionRecall.edgesRecall,
-                            "f1-score" -> precisionRecall.edgesF1Score,
-                            "true_positive" -> precisionRecall.edgesTruePositive.size,
-                            "false_positive" -> precisionRecall.edgesFalsePositive.size,
-                            "false_negative" -> precisionRecall.edgesFalseNegative.size
-                        )
-                )
-            ).getBytes(StandardCharsets.UTF_8)
-        )
-
-        val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-classification.json.gz")
-        Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
-            writer.write(
+            val outputPath = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-precision-recall.json")
+            Files.write(
+                outputPath,
                 Json.prettyPrint(
                     Json.obj(
                         "methods" ->
                             Json.obj(
-                                "true_positive" -> Json.toJson(precisionRecall.methodsTruePositive),
-                                "false_positive" -> Json.toJson(precisionRecall.methodsFalsePositive),
-                                "false_negative" -> Json.toJson(precisionRecall.methodsFalseNegative)
+                                "precision" -> precisionRecall.methods.precision,
+                                "recall" -> precisionRecall.methods.recall,
+                                "f1-score" -> precisionRecall.methods.f1Score,
+                                "true_positive" -> precisionRecall.methods.truePositive.size,
+                                "false_positive" -> precisionRecall.methods.falsePositive.size,
+                                "false_negative" -> precisionRecall.methods.falseNegative.size,
                             ),
                         "edges" ->
                             Json.obj(
-                                "true_positive" -> Json.toJson(precisionRecall.edgesTruePositive),
-                                "false_positive" -> Json.toJson(precisionRecall.edgesFalsePositive),
-                                "false_negative" -> Json.toJson(precisionRecall.edgesFalseNegative)
+                                "precision" -> precisionRecall.edges.precision,
+                                "recall" -> precisionRecall.edges.recall,
+                                "f1-score" -> precisionRecall.edges.f1Score,
+                                "true_positive" -> precisionRecall.edges.truePositive.size,
+                                "false_positive" -> precisionRecall.edges.falsePositive.size,
+                                "false_negative" -> precisionRecall.edges.falseNegative.size
+                            ),
+                        "edges-with-callsite-line-numbers" ->
+                            Json.obj(
+                                "precision" -> precisionRecall.edgesWithCallSiteLineNumbers.precision,
+                                "recall" -> precisionRecall.edgesWithCallSiteLineNumbers.recall,
+                                "f1-score" -> precisionRecall.edgesWithCallSiteLineNumbers.f1Score,
+                                "true_positive" -> precisionRecall.edgesWithCallSiteLineNumbers.truePositive.size,
+                                "false_positive" -> precisionRecall.edgesWithCallSiteLineNumbers.falsePositive.size,
+                                "false_negative" -> precisionRecall.edgesWithCallSiteLineNumbers.falseNegative.size
                             )
                     )
                 ).getBytes(StandardCharsets.UTF_8)
             )
+
+            val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-classification.json.gz")
+            Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
+                writer.write(
+                    Json.prettyPrint(
+                        Json.obj(
+                            "methods" ->
+                                Json.obj(
+                                    "true_positive" -> Json.toJson(precisionRecall.methods.truePositive),
+                                    "false_positive" -> Json.toJson(precisionRecall.methods.falsePositive),
+                                    "false_negative" -> Json.toJson(precisionRecall.methods.falseNegative)
+                                ),
+                            "edges" ->
+                                Json.obj(
+                                    "true_positive" -> Json.toJson(precisionRecall.edges.truePositive),
+                                    "false_positive" -> Json.toJson(precisionRecall.edges.falsePositive),
+                                    "false_negative" -> Json.toJson(precisionRecall.edges.falseNegative)
+                                ),
+                            "edges-with-callsite-line-numbers" ->
+                                Json.obj(
+                                    "true_positive" -> Json.toJson(precisionRecall.edgesWithCallSiteLineNumbers.truePositive),
+                                    "false_positive" -> Json.toJson(precisionRecall.edgesWithCallSiteLineNumbers.falsePositive),
+                                    "false_negative" -> Json.toJson(precisionRecall.edgesWithCallSiteLineNumbers.falseNegative)
+                                )
+                        )
+                    ).getBytes(StandardCharsets.UTF_8)
+                )
+            }
+        } catch {
+            case exc: Throwable =>
+                exc.printStackTrace()
         }
+
     }
 
 

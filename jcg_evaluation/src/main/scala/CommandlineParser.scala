@@ -29,7 +29,8 @@ case class CommandlineOptions(
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
                                  comparisonName:            String  = "",
                                  reachableMethodsInclude:   Regex   = Regex(".*"),
-                                 edgesInclude:              Regex   = Regex(".* -> .*")
+                                 edgesInclude:              Regex   = Regex(".* -> .*"),
+                                 withCallSiteLineNumber:    Boolean = false
 ) {
     val JRE_LOCATIONS_FILE = "jre.conf"
     val SERIALIZATION_FILE_NAME = "cg.json.gz"
