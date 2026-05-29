@@ -1,7 +1,7 @@
 import java.io.*
 import java.nio.file.*
 import java.util.zip.{GZIPInputStream, GZIPOutputStream}
-import play.api.libs.json.Json
+import play.api.libs.json.{JsValue, Json, Writes}
 import org.opalj.br.MethodDescriptor
 
 import java.nio.charset.StandardCharsets
@@ -218,40 +218,32 @@ object Commandline {
                 ).getBytes(StandardCharsets.UTF_8)
             )
 
-            val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-classification.json.gz")
-            Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
-                writer.write(
-                    Json.prettyPrint(
-                        Json.obj(
-                            "methods" ->
-                                Json.obj(
-                                    "true_positive" -> Json.toJson(precisionRecall.methods.truePositive),
-                                    "false_positive" -> Json.toJson(precisionRecall.methods.falsePositive),
-                                    "false_negative" -> Json.toJson(precisionRecall.methods.falseNegative)
-                                ),
-                            "edges" ->
-                                Json.obj(
-                                    "true_positive" -> Json.toJson(precisionRecall.edges.truePositive),
-                                    "false_positive" -> Json.toJson(precisionRecall.edges.falsePositive),
-                                    "false_negative" -> Json.toJson(precisionRecall.edges.falseNegative)
-                                ),
-                            "edges-with-callsite-line-numbers" ->
-                                Json.obj(
-                                    "true_positive" -> Json.toJson(precisionRecall.edgesWithCallSiteLineNumbers.truePositive),
-                                    "false_positive" -> Json.toJson(precisionRecall.edgesWithCallSiteLineNumbers.falsePositive),
-                                    "false_negative" -> Json.toJson(precisionRecall.edgesWithCallSiteLineNumbers.falseNegative)
-                                )
-                        )
-                    ).getBytes(StandardCharsets.UTF_8)
-                )
+            for(scope <- List("methods", "edges", "edges-with-line-numbers");
+                metric <- List("true-positives", "false-positives", "false-negatives")) {
+
+                val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.json.gz")
+                Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
+                    writer.write(
+                        Json.prettyPrint(
+                            scope match {
+                                case "methods" => toJson(precisionRecall.methods)(metric)
+                                case "edges" => toJson(precisionRecall.edges)(metric)
+                                case "edges-with-line-numbers" => toJson(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
+                            }
+                        ).getBytes(StandardCharsets.UTF_8)
+                    )
+                }
             }
         } catch {
-            case exc: Throwable =>
-                exc.printStackTrace()
+            case exc: Throwable => exc.printStackTrace()
         }
-
     }
 
+    private def toJson[T : Writes](classification: Classification[T]): String => JsValue = {
+        case "true-positives"  => Json.toJson(classification.truePositive)
+        case "false-positives" => Json.toJson(classification.falsePositive)
+        case "false-negatives" => Json.toJson(classification.falseNegative)
+    }
 
     ///////////////////////////// Helper Functions //////////////////////////////////////
 
