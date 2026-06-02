@@ -1,10 +1,6 @@
 package org.jcg.valuecgadapter;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Writer;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -339,33 +337,62 @@ public class ValueCG_TestAdapterImpl {
 		if (inputFile.getName().toUpperCase().startsWith("LIB")) {
 			configContent += "\n\nJavaAnalyzer.ValueFinder.Static.CG.LibraryMode=true";
 		}
-		/*        if (mainClass != null && mainClass != "") {
-		    configContent += "\n\nJavaAnalyzer.EntryPoint=" + "<Entrypoint: void main(java.lang.String[])>";
-		}*/
+		if (mainClass != null && mainClass != "") {
+		    configContent += "\n\nJavaAnalyzer.EntryPoint=" + "<" + mainClass + ": void main(java.lang.String[])>";
+		}
 
 		Path serverConf = outDir.resolve("server.conf");
 
 		Files.write(serverConf, configContent.getBytes());
 
-		// Execute analysis process
-		ProcessBuilder pb = new ProcessBuilder("./AnalysisStandaloneRunner", "--configfile", serverConf.toString(),	inputFile.getAbsolutePath());
-		pb.inheritIO();
-		pb.directory(new File(runnerDir));
-		pb.redirectErrorStream(true);
+		Path zip = zipJars(inputFile, classPath);
 
-		int exitCode = pb.start().waitFor();
-		if (exitCode != 0) {
-			throw new RuntimeException("Analysis failed with exit code: " + exitCode);
+		try {
+			// Execute analysis process
+			ProcessBuilder pb = new ProcessBuilder("./AnalysisStandaloneRunner", "--configfile", serverConf.toString(), zip.toString());
+			pb.inheritIO();
+			pb.directory(new File(runnerDir));
+			pb.redirectErrorStream(true);
+
+			int exitCode = pb.start().waitFor();
+			if (exitCode != 0) {
+				throw new RuntimeException("Analysis failed with exit code: " + exitCode);
+			}
+
+			System.out.printf("------ Finished generating CG for input file: %s ------\n", testCaseName);
+			System.out.printf("------ Files written: ------\n");
+			Files.list(outDir).filter(path -> (path.toString().endsWith(".json") || path.toString().endsWith(".json.gz")))
+					.forEach(e -> System.out.println(e.toString()));
+
+			// Count generated callgraph files
+			return Files.list(outDir)
+					.filter(path -> (path.toString().endsWith(".json") || path.toString().endsWith(".json.gz"))).count();
+
+		} finally {
+			Files.delete(zip);
 		}
+	}
 
-		System.out.printf("------ Finished generating CG for input file: %s ------\n", testCaseName);
-		System.out.printf("------ Files written: ------\n");
-		Files.list(outDir).filter(path -> (path.toString().endsWith(".json") || path.toString().endsWith(".json.gz")))
-				.forEach(e -> System.out.println(e.toString()));
+	private static Path zipJars(File inputFile, String[] classPath) throws IOException {
+		Path zipPath = Files.createTempFile("project_", ".zip");
+		try (ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(zipPath.toFile()))) {
+			ArrayList<String> jars = new ArrayList<String>(Arrays.asList(classPath));
+			jars.add(inputFile.getAbsolutePath());
+			for (String jar : jars) {
+				File jarFile = new File(jar);
+				try(FileInputStream fis = new FileInputStream(jarFile)) {
+					ZipEntry zipEntry = new ZipEntry(jarFile.getName());
+					zipOut.putNextEntry(zipEntry);
 
-		// Count generated callgraph files
-		return Files.list(outDir)
-				.filter(path -> (path.toString().endsWith(".json") || path.toString().endsWith(".json.gz"))).count();
+					byte[] bytes = new byte[1024];
+					int length;
+					while((length = fis.read(bytes)) >= 0) {
+						zipOut.write(bytes, 0, length);
+					}
+				}
+			}
+		}
+		return zipPath;
 	}
 
 	// ---- Helper methods for converting ValueCG output format to JCG format ----
