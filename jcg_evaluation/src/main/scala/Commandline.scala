@@ -219,7 +219,9 @@ object Commandline {
             )
 
             for(scope <- List("methods", "edges", "edges-with-line-numbers");
-                metric <- List("true-positives", "false-positives", "false-negatives")) {
+                metric <- List("true-positives", "false-positives", "false-negatives", "false-negative-boundary")
+                if(!(scope == "methods" && metric == "false-negative-boundary"))
+                ) {
 
                 val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.json.gz")
                 Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
@@ -227,8 +229,14 @@ object Commandline {
                         Json.prettyPrint(
                             scope match {
                                 case "methods" => toJson(precisionRecall.methods)(metric)
-                                case "edges" => toJson(precisionRecall.edges)(metric)
-                                case "edges-with-line-numbers" => toJson(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
+                                case "edges" =>
+                                    metric match
+                                        case "false-negative-boundary" => Json.toJson(precisionRecall.edgesFalseNegativeBoundary)
+                                        case _ => toJson(precisionRecall.edges)(metric)
+                                case "edges-with-line-numbers" =>
+                                    metric match
+                                        case "false-negative-boundary" => Json.toJson(precisionRecall.edgesWithCallSiteLineNumbersFalseNegativeBoundary)
+                                        case _ => toJson(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
                             }
                         ).getBytes(StandardCharsets.UTF_8)
                     )

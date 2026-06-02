@@ -54,10 +54,16 @@ case class PrecisionRecall(
         toEdges(actualCallGraph, withCallSiteLineNumber = false),
         toEdges(predictedCallGraph, withCallSiteLineNumber = false)
     )
+    val edgesFalseNegativeBoundary: Set[Edge] = edges.falseNegative.filter(edge =>
+        predictedCallGraph.contains(edge.caller)
+    )
 
     val edgesWithCallSiteLineNumbers: Classification[Edge] = Classification[Edge](
         toEdges(actualCallGraph, withCallSiteLineNumber = true),
         toEdges(predictedCallGraph, withCallSiteLineNumber = true)
+    )
+    val edgesWithCallSiteLineNumbersFalseNegativeBoundary: Set[Edge] = edgesWithCallSiteLineNumbers.falseNegative.filter(edge =>
+        predictedCallGraph.contains(edge.caller)
     )
 
     private def toEdges(cg: Map[Method, Set[CallSite]], withCallSiteLineNumber: Boolean): Set[Edge] =
@@ -75,6 +81,5 @@ case class Edge(caller: Method, line: Option[Int], target: Method)
 
 object Edge {
     implicit val methodReads: Reads[Edge] = Json.reads[Edge]
-
     implicit val methodWrites: Writes[Edge] = Json.writes[Edge]
 }
