@@ -10,6 +10,7 @@ enum Action:
     case Assess
     case Size
     case PrecisionRecall
+    case JDKCallBacks
 
 case class CommandlineOptions(
                                  action:          Action            = Action.Analyze,
@@ -167,6 +168,18 @@ object CommandlineParser {
                         .valueName("regex")
                         .maxOccurs(1)
                         .optional()
+                ),
+
+            cmd("jdk-call-backs")
+                .action((_,c) => c.copy(action = Action.JDKCallBacks))
+                .text("Computes the call backs from JDK into application code.")
+                .children(
+                    opt[String]("reachable-methods-include")
+                        .action((reachableMethodsInclude, c) => c.copy(reachableMethodsInclude = Regex(reachableMethodsInclude)))
+                        .text("Regular expression that filters the reachable methods that belong to application code.")
+                        .valueName("regex")
+                        .maxOccurs(1)
+                        .required(),
                 ),
 
             checkConfig(c =>

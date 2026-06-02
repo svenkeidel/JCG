@@ -50,6 +50,7 @@ object Commandline {
                     case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
                     case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
                     case Action.PrecisionRecall => computePrecisionRecall(options, callGraphsDirectory, testCase)
+                    case Action.JDKCallBacks => computeJDKCallBacks(options, callGraphsDirectory, testCase)
             }
 
         }
@@ -77,6 +78,7 @@ object Commandline {
                             projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
                             jreLocations(projectSpec.java),
                             target = projectSpec.target(options.projectsDir.toFile).toString,
+                            jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
                             analyzeJDK = options.analyzeJdk,
                             analysisArguments = options.analysisArgs.split(" ")
                         )
@@ -166,6 +168,31 @@ object Commandline {
         )
     }
 
+    def computeJDKCallBacks(options: CommandlineOptions, callGraphDirectory: Path, testCase: String): Unit = {
+        val jdkNameSpace = List("com/oracle", "com/sun", "javax", "java", "jdk", "org/ietf", "org/jcp", "org/omg", "org/w3c", "org/xml", "sun")
+        try {
+            val callGraph = Util.readReachableMethods(Util.findCallGraphFile(callGraphDirectory, testCase)).toMap
+            val jdkCallBacks =
+                for{ (caller,callSites) <- callGraph
+                    if(jdkNameSpace.exists(jdkPackage => caller.declaringClass.startsWith(s"L${jdkPackage}")))
+                    callSite <- callSites
+                    target <- callSite.targets
+                    if(options.reachableMethodsInclude.matches(target.declaringClass))
+                } yield Edge(caller, Some(callSite.line), target)
+
+            val outputPath = callGraphDirectory.resolve(s"$testCase-jdk-callbacks.json.gz")
+            Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(outputPath.toFile)))) { writer =>
+                writer.write(
+                    Json.prettyPrint(
+                        Json.toJson(jdkCallBacks)
+                    ).getBytes(StandardCharsets.UTF_8)
+                )
+            }
+        } catch {
+            case exc: Throwable => exc.printStackTrace()
+        }
+    }
+
     def computePrecisionRecall(options: CommandlineOptions, callGraphDirectory: Path, testCase: String): Unit = {
         try {
             val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
@@ -247,13 +274,13 @@ object Commandline {
         }
     }
 
+    ///////////////////////////// Helper Functions //////////////////////////////////////
+
     private def toJson[T : Writes](classification: Classification[T]): String => JsValue = {
         case "true-positives"  => Json.toJson(classification.truePositive)
         case "false-positives" => Json.toJson(classification.falsePositive)
         case "false-negatives" => Json.toJson(classification.falseNegative)
     }
-
-    ///////////////////////////// Helper Functions //////////////////////////////////////
 
     private def reportTiming(experimentOutputPath: Path, testCase: String, elapsed: Long): Unit = {
         val seconds = elapsed / 1000000000d

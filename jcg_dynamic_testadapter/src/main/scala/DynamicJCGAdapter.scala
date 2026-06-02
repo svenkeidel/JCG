@@ -42,6 +42,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
         var args = List(javaPath)
         args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
+        args ++= jvmArgs
         args :+= s"-agentpath:$agentPath=$agentArgs"
         args ++= List("-cp", classPath.mkString(":"))
         args :+= mainClass
