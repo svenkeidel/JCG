@@ -10,7 +10,7 @@ enum Action:
     case Assess
     case Size
     case PrecisionRecall
-    case JDKCallBacks
+    case JDKCallbacks
 
 case class CommandlineOptions(
                                  action:          Action            = Action.Analyze,
@@ -170,8 +170,8 @@ object CommandlineParser {
                         .optional()
                 ),
 
-            cmd("jdk-call-backs")
-                .action((_,c) => c.copy(action = Action.JDKCallBacks))
+            cmd("jdk-callbacks")
+                .action((_,c) => c.copy(action = Action.JDKCallbacks))
                 .text("Computes the call backs from JDK into application code.")
                 .children(
                     opt[String]("reachable-methods-include")

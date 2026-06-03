@@ -50,7 +50,7 @@ object Commandline {
                     case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
                     case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
                     case Action.PrecisionRecall => computePrecisionRecall(options, callGraphsDirectory, testCase)
-                    case Action.JDKCallBacks => computeJDKCallBacks(options, callGraphsDirectory, testCase)
+                    case Action.JDKCallbacks => computeJDKCallBacks(options, callGraphsDirectory, testCase)
             }
 
         }
