@@ -8,7 +8,7 @@ DynamicCG.so: DynamicCG.cpp
 		-I /usr/lib/jvm/java-25-openjdk-amd64/include/  \
 		-I /usr/lib/jvm/java-25-openjdk-amd64/include/linux/ \
 		DynamicCG.cpp \
-		-lboost_iostreams \
+		-lboost_iostreams -lz \
 		-o DynamicCG.so
 
 clean:

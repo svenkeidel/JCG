@@ -216,7 +216,7 @@ jcg_dynamic_testadapter / buildJVMTIAgent := {
     s"g++ -O3 -std=c++20 -fPIC -shared -o jcg_dynamic_testadapter/src/main/resources/DynamicCG.so " +
         s"-I ${System.getProperty("java.home")}/include " +
         s"-I ${System.getProperty("java.home")}/include/linux " +
-        "-lboost_iostreams " +
+        "-lboost_iostreams -lz " +
         s"jcg_dynamic_testadapter/src/main/resources/DynamicCG.cpp" !
 }
 
