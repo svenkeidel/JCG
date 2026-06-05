@@ -200,10 +200,10 @@ object Commandline {
 
             val truthCallGraphsDirectory = options.truthCallGraphsDirectory.resolve("Dynamic", "Dynamic")
             val truthCallGraphPath = Util.findCallGraphFile(truthCallGraphsDirectory, testCase)
-            val truthCallGraph = Util.readReachableMethods(truthCallGraphPath).toMap
+            val truthCallGraph = Util.readDynamicCallGraph(truthCallGraphPath)
 
             val precisionRecall = PrecisionRecall(
-                actualCallGraph = truthCallGraph,
+                actualCallGraph = truthCallGraph.toReachableMethods.toMap,
                 predictedCallGraph = predictedCallGraph,
                 reachableMethodsInclude = options.reachableMethodsInclude,
                 edgeInclude = options.edgesInclude

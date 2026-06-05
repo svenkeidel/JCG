@@ -1,17 +1,15 @@
-import java.io.BufferedReader
-import java.io.File
-import java.io.InputStreamReader
-import java.io.Writer
-import java.net.ServerSocket
-import java.nio.file.Paths
-import java.util
-import java.util.stream.Collectors
+import java.io.{BufferedInputStream, FileInputStream, Writer}
+import java.nio.file.{Files, Paths}
+import java.util.zip.GZIPInputStream
 import scala.collection.mutable
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
 import scala.util.Using
+import play.api.libs.json.{JsResult, JsValue, Json, Reads, __}
+import play.api.libs.functional.syntax.*
 
-import org.opalj.br.MethodDescriptor
+import scala.collection.immutable.ArraySeq
 
+type OuterCallSite = CallSite
 object DynamicJCGAdapter extends JavaTestAdapter {
 
     override val possibleAlgorithms: Array[String] = Array("Dynamic")
@@ -34,167 +32,87 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
         val javaPath = JDKPath.getParent.toAbsolutePath.toString + "/bin/java"
         val agentPath = Paths.get("jcg_dynamic_testadapter", "src", "main", "resources", "DynamicCG.so")
-        val agentArgs = Array(port.toString).mkString(",")
-        classPath :+= inputDirPath
 
-        val reachableMethods = mutable.Set[Method]()
-        val edges = mutable.Map[Method, mutable.Map[(Int, Int), mutable.Set[Method]]]()
+        val callGraphPath = Files.createTempFile("callgraph", ".json.gz")
 
-        var args = List(javaPath)
-        args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
-        args ++= jvmArgs
-        args :+= s"-agentpath:$agentPath=$agentArgs"
-        args ++= List("-cp", classPath.mkString(":"))
-        args :+= mainClass
-        args ++= programArgs
+        try {
+            val agentArgs = Array(callGraphPath.toString).mkString(",")
+            classPath :+= inputDirPath
 
-        val before = System.nanoTime
+            val reachableMethods = mutable.Set[Method]()
+            val edges = mutable.Map[Method, mutable.Map[(Int, Int), mutable.Set[Method]]]()
 
-        println(args.mkString(" "))
-        val result = Using.Manager { use =>
-            val serverSocket = use(new ServerSocket(port))
+            var args = List(javaPath)
+            args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
+            args ++= jvmArgs
+            args :+= s"-agentpath:$agentPath=$agentArgs"
+            args ++= List("-cp", classPath.mkString(":"))
+            args :+= mainClass
+            args ++= programArgs
 
-            new ProcessBuilder(args.asJava).inheritIO().start()
+            println(args.mkString(" "))
 
-            val clientSocket = use(serverSocket.accept)
-            serverSocket.close()
+            val before = System.nanoTime
+            val processBuilder = new ProcessBuilder(args.asJava).inheritIO()
+            processBuilder.environment().put("LD_LIBRARY_PATH", "/usr/lib/x86_64-linux-gnu/")
+            processBuilder.start().waitFor()
+            val after = System.nanoTime
 
-            val in = use(new BufferedReader(new InputStreamReader(clientSocket.getInputStream)))
-
-            val endMessage = "End of Callgraph"
-            var caller = in.readLine()
-
-            while (caller != endMessage) {
-
-                val parsedCaller = if (caller == "TopLevel") {
-                    None
-                } else {
-                    Some(parseMethod(caller))
-                }
-
-                val pc = in.readLine().toInt
-                val lineNumber = in.readLine().toInt
-                val callee = in.readLine()
-                val pcLn = (pc, lineNumber)
-                val parsedCallee = parseMethod(callee)
-
-                reachableMethods += parsedCallee
-
-                if (parsedCaller.isDefined) {
-                    if (!edges.contains(parsedCaller.get)) {
-                        edges += ((parsedCaller.get, mutable.Map[(Int, Int), mutable.Set[Method]]()))
-                    }
-
-                    val targets = edges(parsedCaller.get)
-
-                    if (!targets.contains(pcLn)) {
-                        targets += ((pcLn, mutable.Set[Method]()))
-                    }
-
-                    targets(pcLn) += parsedCallee
-                }
-
-                caller = in.readLine()
+            val callGraphJSON = Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) {
+                input => output.write(String(input.readAllBytes()))
             }
 
-            System.nanoTime()
+            after - before
+        } finally {
+            Files.delete(callGraphPath)
         }
+    }
 
-        if (result.isFailure) {
-            throw result.failed.get
-        }
+    private case class CallSiteSerialized(method: String, line: Int, pc: Int):
+        def deserialize(methods: Map[String,Method]): CallSite =
+            CallSite(method = methods(method), line = line, pc = pc)
 
-        var edgeCount = 0
-        println(reachableMethods.size)
-        output.write(s"""{"reachableMethods":[""")
-        var firstRM = true
-        for {
-            rm ← reachableMethods
-        } {
-            if (firstRM) {
-                firstRM = false
-            } else {
-                output.write(",")
+    private case class CallTreeSerialized(callTree: Map[String, CallTreeSerialized]):
+        def deserialize(callSites: Map[String,CallSite]): CallTree =
+            CallTree(callTree.map((callSite,subTree) => (callSites(callSite), subTree.deserialize(callSites))))
+
+    private case class CallGraphSerialized(callTree: CallTreeSerialized, callSites: Map[String,CallSiteSerialized], methods: Map[String,Method]):
+        def deserialize: CallTree =
+            val deserializedCallSites = callSites.view.mapValues(_.deserialize(methods)).toMap
+            callTree.deserialize(deserializedCallSites)
+
+
+    private implicit val callSiteSerializedReads: Reads[CallSiteSerialized] = Json.reads[CallSiteSerialized]
+    private implicit val callTreeSerializedReads: Reads[CallTreeSerialized] = (json: JsValue) =>
+        implicitly[Reads[Map[String, CallTreeSerialized]]].reads(json).map(CallTreeSerialized(_))
+    private implicit val callGraphSerializedReads: Reads[CallGraphSerialized] = Json.reads[CallGraphSerialized]
+
+    case class CallSite(method: Method, line: Int, pc: Int)
+    case class CallTree(callSites: Map[CallSite, CallTree]):
+        def toReachableMethods: ReachableMethods =
+            val reachableMethods = mutable.Map.empty[Method, mutable.Map[CallSite, Set[Method]]]
+            addReachableMethods(reachableMethods)
+            ReachableMethods(reachableMethods.view.map((method, callSites) =>
+                ReachableMethod(method, callSites.view.map((callSite, targets) =>
+                    new OuterCallSite(declaredTarget = null, line = callSite.line, pc = Some(callSite.pc), targets = targets)
+                ).toSet)
+            ).toSet)
+
+        private def addReachableMethods(reachableMethods: mutable.Map[Method, mutable.Map[CallSite, Set[Method]]]): Unit =
+            for ((callSite, subTree) <- callSites) {
+
+                val method = callSite.method
+                val methodCallSites = reachableMethods.getOrElse(callSite.method, mutable.Map.empty[CallSite, Set[Method]])
+                val methodTargets = methodCallSites.getOrElse(callSite, Set.empty)
+
+                val newTargets = subTree.callSites.keySet.map(_.method)
+                methodCallSites += callSite -> (methodTargets ++ newTargets)
+                reachableMethods += method -> (methodCallSites)
+
+                subTree.addReachableMethods(reachableMethods)
             }
-            output.write("{\"method\":")
-            writeMethodObject(rm, output)
-            output.write(",\"callSites\":[")
-            if (edges.contains(rm)) {
-                val callSites = edges(rm)
-                edgeCount += callSites.values.foldLeft(0)((v, s) ⇒ v + s.size)
-                writeCallSites(callSites, output)
-            }
-            output.write("]}")
-        }
-        println(edgeCount)
-        output.write("]}")
 
-        val after = result.getOrElse(before)
 
-        after - before
-    }
-
-    def parseMethod(param: String): Method = {
-        val calleeData = param.split(':')
-        val calleeNameDesc = calleeData(1).split("\\(")
-        val calleeDesc = MethodDescriptor("(" + calleeNameDesc(1))
-        Method(
-            calleeNameDesc(0),
-            calleeData(0),
-            calleeDesc.returnType.toJVMTypeName,
-            calleeDesc.parameterTypes.map(_.toJVMTypeName).toList
-        )
-    }
-
-    private def writeCallSites(
-        callSites: mutable.Map[(Int, Int), mutable.Set[Method]],
-        out:       Writer
-    ): Unit = {
-        var firstCS = true
-        for (callSite ← callSites) {
-            if (firstCS) {
-                firstCS = false
-            } else {
-                out.write(",")
-            }
-            writeCallSite(callSite._1, callSite._2, out)
-        }
-    }
-
-    private def writeCallSite(
-        pcLn:    (Int, Int),
-        targets: mutable.Set[Method],
-        out:     Writer
-    ): Unit = {
-        out.write("{\"declaredTarget\":")
-        writeMethodObject(Method("", "", "", List.empty), out)
-        out.write(",\"line\":")
-        out.write(pcLn._2.toString)
-        out.write(",\"pc\":")
-        out.write(pcLn._1.toString)
-        out.write(",\"targets\":[")
-        var first = true
-        for (tgt ← targets) {
-            if (first) first = false
-            else out.write(",")
-            writeMethodObject(tgt, out)
-        }
-        out.write("]}")
-    }
-
-    private def writeMethodObject(
-        method: Method,
-        out:    Writer
-    ): Unit = {
-        out.write("{\"name\":\"")
-        out.write(method.name)
-        out.write("\",\"declaringClass\":\"")
-        out.write(method.declaringClass)
-        out.write("\",\"returnType\":\"")
-        out.write(method.returnType)
-        out.write("\",\"parameterTypes\":[")
-        if (method.parameterTypes.length > 0)
-            out.write(method.parameterTypes.mkString("\"", "\",\"", "\""))
-        out.write("]}")
-    }
+    implicit val callTreeReads: Reads[CallTree] = (json: JsValue) =>
+        callGraphSerializedReads.reads(json).map(_.deserialize)
 }

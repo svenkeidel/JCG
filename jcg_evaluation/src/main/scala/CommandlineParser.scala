@@ -39,10 +39,10 @@ case class CommandlineOptions(
 }
 
 object CommandlineParser {
-    val ALL_JAVA_ADAPTERS: List[JavaTestAdapter] = List(DynamicJCGAdapter, DoopAdapter, OpalJCGAdatper, SootJCGAdapter, SootUpJCGAdapter, /*SenecaJCGAdapter,*/ Tai_e_JCG_Adapter, WalaJCGAdapter, ValueCG_JCG_Adapter)
+    val ALL_JAVA_ADAPTERS: List[JavaTestAdapter] = List(DoopAdapter, OpalJCGAdatper, SootJCGAdapter, SootUpJCGAdapter, /*SenecaJCGAdapter,*/ Tai_e_JCG_Adapter, WalaJCGAdapter, ValueCG_JCG_Adapter)
     val ALL_JS_ADAPTERS: List[JSTestAdapter] = List(JSCallGraphAdapter, Code2flowCallGraphAdapter, TAJSJCGAdapter, JellyCallGraphAdapter)
     val ALL_PY_ADAPTERS: List[PyTestAdapter] = List(PyCGAdapter, PyanAdapter, Code2flowPyCallGraphAdapter, JarvisCallGraphAdapter)
-    private val ALL_ADAPTERS: List[TestAdapter] = ALL_JS_ADAPTERS ++ ALL_JAVA_ADAPTERS ++ ALL_PY_ADAPTERS
+    private val ALL_ADAPTERS: List[TestAdapter] = List(DynamicJCGAdapter) ++ ALL_JS_ADAPTERS ++ ALL_JAVA_ADAPTERS ++ ALL_PY_ADAPTERS
 
     val builder = OParser.builder[CommandlineOptions]
     val parser = {

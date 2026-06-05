@@ -3,6 +3,8 @@ import java.nio.file.*
 import java.util.zip.GZIPInputStream
 import play.api.libs.json.{JsValue, Json}
 
+import scala.util.Using
+
 object Util {
 
     def getProjectsDir(projectsDir: File): File = {
@@ -40,22 +42,31 @@ object Util {
         else if(Files.exists(compressCallGraphFile))
             compressCallGraphFile
         else
-            throw IllegalStateException(s"Cannot find call graphs files $uncompressCallGraphFile or $compressCallGraphFile")
+            throw java.io.IOException(s"Cannot find call graphs files $uncompressCallGraphFile or $compressCallGraphFile")
     }
 
 
     def readJSON(callGraphPath: Path): JsValue = {
-        val input =
-            if (callGraphPath.getFileName.toString.endsWith(".gz"))
+        Using(if (callGraphPath.getFileName.toString.endsWith(".gz"))
                 new GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))
             else
                 BufferedInputStream(FileInputStream(callGraphPath.toFile))
-
-        Json.parse(input)
+        ) { input =>
+            Json.parse(input)
+        }.get
     }
 
     def readReachableMethods(callGraphPath: Path): ReachableMethods = {
         val json = readJSON(callGraphPath)
-        json.validate[ReachableMethods].get
+        if(callGraphPath.toString.contains("Dynamic")) {
+            json.validate[DynamicJCGAdapter.CallTree].get.toReachableMethods
+        } else {
+            json.validate[ReachableMethods].get
+        }
+    }
+
+    def readDynamicCallGraph(callGraphPath: Path): DynamicJCGAdapter.CallTree = {
+        val json = readJSON(callGraphPath)
+        json.validate[DynamicJCGAdapter.CallTree].get
     }
 }
