@@ -53,16 +53,20 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             println(args.mkString(" "))
 
-            val before = System.nanoTime
             val processBuilder = new ProcessBuilder(args.asJava).inheritIO()
 
             val usrLib = Paths.get("/usr/lib/x86_64-linux-gnu")
-            val libBoostPath = Files.walk(usrLib).filter(lib => lib.getFileName.toString.startsWith("libboost_iostreams")).findFirst().toScala
+            val libBoostPath = Files.walk(usrLib, 1).filter(lib => Files.isRegularFile(lib) && lib.getFileName.toString.startsWith("libboost_iostreams")).findFirst().toScala
 
-            if(libBoostPath.isEmpty)
-                throw java.io.IOException("Cannot find boost library path")
-            processBuilder.environment().put("LD_LIBRARY_PATH", libBoostPath.get.getParent.toString)
+            libBoostPath match {
+                case Some(libBoost) =>
+                    println(s"Found libboost_iostreams: ${libBoost}")
+                    processBuilder.environment().put("LD_LIBRARY_PATH", libBoost.getParent.toString)
+                case None => throw java.io.IOException("Cannot find boost library path")
+            }
+            println(s"LD_LIBRARY_PATH=${processBuilder.environment().get("LD_LIBRARY_PATH")}")
 
+            val before = System.nanoTime
             processBuilder.start().waitFor()
             val after = System.nanoTime
 
