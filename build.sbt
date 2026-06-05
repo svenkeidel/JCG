@@ -213,11 +213,7 @@ lazy val buildJVMTIAgent = taskKey[Unit]("Build the JVMTI Agent")
 
 jcg_dynamic_testadapter / buildJVMTIAgent := {
     import sys.process._
-    s"g++ -O3 -std=c++20 -fPIC -shared -o jcg_dynamic_testadapter/src/main/resources/DynamicCG.so " +
-        s"-I ${System.getProperty("java.home")}/include " +
-        s"-I ${System.getProperty("java.home")}/include/linux " +
-        "-lboost_iostreams -lz " +
-        s"jcg_dynamic_testadapter/src/main/resources/DynamicCG.cpp" !
+    Process("make -C jcg_dynamic_testadapter/src/main/resources/ clean all", None, "JAVA_HOME" -> System.getProperty("java.home")).!
 }
 
 lazy val jcg_testadapter_commons = project.settings(
