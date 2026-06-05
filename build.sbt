@@ -213,7 +213,7 @@ lazy val buildJVMTIAgent = taskKey[Unit]("Build the JVMTI Agent")
 
 jcg_dynamic_testadapter / buildJVMTIAgent := {
     import sys.process._
-    Process("make -C jcg_dynamic_testadapter/src/main/resources/ clean all", None, "JAVA_HOME" -> System.getProperty("java.home")).!
+    Process("make -C jcg_dynamic_testadapter/src/main/resources/", None, "JAVA_HOME" -> System.getProperty("java.home")).!
 }
 
 lazy val jcg_testadapter_commons = project.settings(

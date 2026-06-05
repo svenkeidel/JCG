@@ -210,23 +210,20 @@ struct CallTree {
 static CallTree callTree;
 
 
+static long methodCalls = 0;
+
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
+
+    if (methodCalls % 10000 == 0) {
+        std::cout << "callSitePool.size = " << callSitePool.size() << "\n";
+        std::cout << "methodPool.size = " << methodPool.size() << "\n" << std::flush;
+    }
+    methodCalls += 1;
 
     static const jint start_depth = 0;
     static const jint max_stack_depth = 10000;
     static jvmtiFrameInfo stack_frames[max_stack_depth];
     static jint stack_size;
-
-    static size_t lastCallSitePoolSize = 0;
-    static size_t lastMethodPoolSize = 0;
-    if (callSitePool.size() >= lastCallSitePoolSize + 1000) {
-        lastCallSitePoolSize = callSitePool.size();
-        std::cout << "callSitePool.size = " << lastCallSitePoolSize << "\n";
-    }
-    if (methodPool.size() >= lastMethodPoolSize + 1000) {
-        lastMethodPoolSize = methodPool.size();
-        std::cout << "methodPool.size = " << lastMethodPoolSize << "\n";
-    }
 
     jvmtiError err;
     if ((err = jvmti->GetStackTrace(thread, start_depth, max_stack_depth, stack_frames, &stack_size)) != JVMTI_ERROR_NONE)
