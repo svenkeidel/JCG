@@ -1,3 +1,5 @@
+import org.apache.commons.io.IOUtils
+
 import java.io.{BufferedInputStream, FileInputStream, Writer}
 import java.nio.file.{Files, Paths}
 import java.util.zip.GZIPInputStream
@@ -8,6 +10,7 @@ import scala.util.Using
 import play.api.libs.json.{JsResult, JsValue, Json, Reads, __}
 import play.api.libs.functional.syntax.*
 
+import java.nio.charset.StandardCharsets
 import scala.collection.immutable.ArraySeq
 
 type OuterCallSite = CallSite
@@ -71,7 +74,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             val after = System.nanoTime
 
             val callGraphJSON = Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) {
-                input => output.write(String(input.readAllBytes()))
+                input => IOUtils.copy(input, output, StandardCharsets.UTF_8)
             }
 
             after - before
