@@ -3,6 +3,7 @@ import java.nio.file.{Files, Paths}
 import java.util.zip.GZIPInputStream
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
+import scala.jdk.OptionConverters.*
 import scala.util.Using
 import play.api.libs.json.{JsResult, JsValue, Json, Reads, __}
 import play.api.libs.functional.syntax.*
@@ -45,7 +46,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             var args = List(javaPath)
             args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
             args ++= jvmArgs
-            args :+= s"-agentpath:$agentPath=$agentArgs"
+            args :+= s"-agentpath:${agentPath.toAbsolutePath}=$agentArgs"
             args ++= List("-cp", classPath.mkString(":"))
             args :+= mainClass
             args ++= programArgs
@@ -54,7 +55,14 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             val before = System.nanoTime
             val processBuilder = new ProcessBuilder(args.asJava).inheritIO()
-            processBuilder.environment().put("LD_LIBRARY_PATH", "/usr/lib/x86_64-linux-gnu/")
+
+            val usrLib = Paths.get("/usr/lib/x86_64-linux-gnu")
+            val libBoostPath = Files.walk(usrLib).filter(lib => lib.getFileName.toString.startsWith("libboost_iostreams")).findFirst().toScala
+
+            if(libBoostPath.isEmpty)
+                throw java.io.IOException("Cannot find boost library path")
+            processBuilder.environment().put("LD_LIBRARY_PATH", libBoostPath.get.getParent.toString)
+
             processBuilder.start().waitFor()
             val after = System.nanoTime
 
