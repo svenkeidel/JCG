@@ -8,6 +8,7 @@
 #include <fstream>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <filesystem>
 
 #include <string_view>
 
@@ -178,7 +179,7 @@ struct CompareCallSitePointer {
 std::unordered_set<CallSite> callSitePool;
 
 struct CallTree {
-    std::map<const CallSite*, std::unique_ptr<CallTree>, CompareCallSitePointer> children;
+    std::map<const CallSite*, CallTree, CompareCallSitePointer> children;
 
     void addStackTrace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
         if(stack_size > 0) {
@@ -187,10 +188,10 @@ struct CallTree {
             const CallSite* topmost = &(*it);
 
             if(! children.contains(topmost)) {
-                children.emplace(topmost, std::make_unique<CallTree>());
+                children.emplace(topmost, CallTree{});
             }
 
-            children[topmost]->addStackTrace(jvmti, stack_frames, stack_size - 1);
+            children[topmost].addStackTrace(jvmti, stack_frames, stack_size - 1);
         }
     }
 
@@ -205,7 +206,7 @@ struct CallTree {
             }
 
             out << "\""sv << callSite << "\": "sv;
-            subTree->toJson(out);
+            subTree.toJson(out);
 
             first = false;
         }
@@ -248,15 +249,21 @@ void return_cg() {
 
     std::streamsize buffer_size = 64 * 1024;
     boost::iostreams::gzip_params params;
+    params.level = boost::iostreams::gzip::default_compression;
     out.push(boost::iostreams::gzip_compressor(params, buffer_size));
     out.push(call_graph_file); // Pipe the compressed data directly to your file
 
     out << "{"sv;
 
+    {
         std::cout << "Write call tree ...\n" << std::flush;
 
         out << "\"callTree\": "sv;
         callTree.toJson(out);
+
+        boost::iostreams::flush(out);
+
+        std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
 
         std::cout << "Write call-sites ...\n" << std::flush;
 
@@ -272,6 +279,10 @@ void return_cg() {
         }
         out << "}"sv;
 
+        boost::iostreams::flush(out);
+
+        std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
+
         std::cout << "Write methods ...\n" << std::flush;
 
         out << ", \"methods\": {"sv;
@@ -286,9 +297,15 @@ void return_cg() {
         }
         out << "}"sv;
 
+        boost::iostreams::flush(out);
+        std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
+    }
+
     out << "}"sv;
 
     boost::iostreams::close(out);
+
+    std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
 }
 
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti_env, JNIEnv* jni_env) {
