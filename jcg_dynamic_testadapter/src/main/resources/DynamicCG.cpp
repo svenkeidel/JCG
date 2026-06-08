@@ -179,7 +179,7 @@ struct CompareCallSitePointer {
 std::unordered_set<CallSite> callSitePool;
 
 struct CallTree {
-    std::map<const CallSite*, CallTree, CompareCallSitePointer> children;
+    std::map<const CallSite*, std::unique_ptr<CallTree>, CompareCallSitePointer> children;
 
     void addStackTrace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
         if(stack_size > 0) {
@@ -188,10 +188,10 @@ struct CallTree {
             const CallSite* topmost = &(*it);
 
             if(! children.contains(topmost)) {
-                children.emplace(topmost, CallTree{});
+                children.emplace(topmost, std::make_unique<CallTree>());
             }
 
-            children[topmost].addStackTrace(jvmti, stack_frames, stack_size - 1);
+            children[topmost]->addStackTrace(jvmti, stack_frames, stack_size - 1);
         }
     }
 
@@ -206,7 +206,7 @@ struct CallTree {
             }
 
             out << "\""sv << callSite << "\": "sv;
-            subTree.toJson(out);
+            subTree->toJson(out);
 
             first = false;
         }
