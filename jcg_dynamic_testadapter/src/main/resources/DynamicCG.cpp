@@ -143,7 +143,7 @@ struct CallSite {
         pc = loc;
     }
 
-    bool operator==(const CallSite &other) const {
+    bool operator==(const CallSite &other) const noexcept {
         return method == other.method && lineNumber == other.lineNumber && pc == other.pc;
     }
 
@@ -170,16 +170,22 @@ namespace std {
 
 }
 
-struct CompareCallSitePointer {
+struct CallSitePointerHash {
+    size_t operator()(const CallSite* callSite) const noexcept {
+        return reinterpret_cast<size_t>(callSite);
+    }
+};
+
+struct CallSitePointerEquals {
     bool operator()(const CallSite* lhs, const CallSite* rhs) const {
-        return lhs < rhs;
+        return lhs == rhs;
     }
 };
 
 std::unordered_set<CallSite> callSitePool;
 
 struct CallTree {
-    std::map<const CallSite*, std::unique_ptr<CallTree>, CompareCallSitePointer> children;
+    std::unordered_map<const CallSite*, std::unique_ptr<CallTree>, CallSitePointerHash, CallSitePointerEquals> children;
 
     void addStackTrace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
         if(stack_size > 0) {
