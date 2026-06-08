@@ -187,6 +187,10 @@ std::unordered_set<CallSite> callSitePool;
 struct CallTree {
     std::unordered_map<const CallSite*, std::unique_ptr<CallTree>, CallSitePointerHash, CallSitePointerEquals> children;
 
+    CallTree() {
+        children.reserve(1);
+    }
+
     void addStackTrace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
         if(stack_size > 0) {
             auto [it, _inserted] = callSitePool.insert(CallSite (jvmti, stack_frames[stack_size - 1].method, stack_frames[stack_size - 1].location ));
@@ -227,6 +231,14 @@ struct CallTree {
         }
         return s;
     }
+
+    unsigned int bucketSum() const {
+        unsigned int sum = children.bucket_count();
+        for (const auto& [callSite, subTree] : children) {
+            sum += subTree->bucketSum();
+        }
+        return sum;
+    }
 };
 static CallTree callTree;
 
@@ -236,7 +248,7 @@ static long methodCalls = 0;
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
 
     if (methodCalls % 100000 == 0) {
-        std::cout << "callTree.size = "sv << callTree.size() << "\n"sv;
+        std::cout << "callTree.size = "sv << callTree.size() << ", callTree.bucketSum = " << callTree.bucketSum() << "\n"sv;
         std::cout << "callSitePool.size = "sv << callSitePool.size() << "\n"sv;
         std::cout << "methodPool.size = "sv << methodPool.size() << "\n"sv;
         std::cout.flush();
