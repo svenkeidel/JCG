@@ -213,6 +213,14 @@ struct CallTree {
 
         out << "}"sv;
     }
+
+    unsigned int size() const {
+        unsigned int s = 1;
+        for (const auto& [callSite, subTree] : children) {
+            s += subTree->size();
+        }
+        return s;
+    }
 };
 static CallTree callTree;
 
@@ -222,6 +230,7 @@ static long methodCalls = 0;
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
 
     if (methodCalls % 100000 == 0) {
+        std::cout << "callTree.size = "sv << callTree.size() << "\n"sv;
         std::cout << "callSitePool.size = "sv << callSitePool.size() << "\n"sv;
         std::cout << "methodPool.size = "sv << methodPool.size() << "\n"sv;
         std::cout.flush();
