@@ -195,22 +195,22 @@ struct CallTree {
     }
 
     void toJson(boost::iostreams::filtering_ostream& out) const {
-        out << "{";
+        out << "{"sv;
 
         bool first = true;
         for (const auto& [callSite, subTree] : children) {
 
             if (! first) {
-                out << ",";
+                out << ","sv;
             }
 
-            out << "\"" << callSite << "\": ";
+            out << "\""sv << callSite << "\": "sv;
             subTree->toJson(out);
 
             first = false;
         }
 
-        out << "}";
+        out << "}"sv;
     }
 };
 static CallTree callTree;
@@ -246,17 +246,19 @@ void return_cg() {
     // Create a filtering stream and push the Gzip compressor
     boost::iostreams::filtering_ostream out;
 
-    // Explicitly restrict the buffer size to 32KB
+    std::streamsize buffer_size = 64 * 1024;
     boost::iostreams::gzip_params params;
-    out.push(boost::iostreams::gzip_compressor(params, 32768));
+    out.push(boost::iostreams::gzip_compressor(params, buffer_size));
     out.push(call_graph_file); // Pipe the compressed data directly to your file
-
-    unsigned int count = 0;
 
     out << "{"sv;
 
+        std::cout << "Write call tree ...\n" << std::flush;
+
         out << "\"callTree\": "sv;
         callTree.toJson(out);
+
+        std::cout << "Write call-sites ...\n" << std::flush;
 
         out << ", \"callSites\": {"sv;
         bool first = true;
@@ -267,12 +269,10 @@ void return_cg() {
             callSite.toJson(out);
 
             first = false;
-            if (++count % 1000 == 0)
-                out.flush();
         }
         out << "}"sv;
 
-        count = 0;
+        std::cout << "Write methods ...\n" << std::flush;
 
         out << ", \"methods\": {"sv;
         first = true;
@@ -283,9 +283,6 @@ void return_cg() {
             method.toJson(out);
 
             first = false;
-
-            if (++count % 1000 == 0)
-                out.flush();
         }
         out << "}"sv;
 
