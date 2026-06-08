@@ -1,11 +1,17 @@
 
 #include <jvmti.h>
+
 #include <map>
 #include <unordered_set>
+
 #include <iostream>
 #include <fstream>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+
+#include <string_view>
+
+using namespace std::string_view_literals;
 
 static jvmtiEnv *jvmti = NULL;
 static char *call_graph_file_name = NULL;
@@ -75,19 +81,19 @@ struct Method {
     }
 
     void toJson(boost::iostreams::filtering_ostream& out) const {
-        out << "{";
-        out << "\"declaringClass\": \"" << declaringClass << "\",";
-        out << "\"name\": \"" << name << "\",";
-        out << "\"returnType\": \"" << returnType << "\",";
-        out << "\"parameterTypes\": [";
+        out << "{"sv;
+        out << "\"declaringClass\": \""sv << declaringClass << "\","sv;
+        out << "\"name\": \""sv << name << "\","sv;
+        out << "\"returnType\": \""sv << returnType << "\","sv;
+        out << "\"parameterTypes\": ["sv;
         bool first = true;
         for (const auto& parameter : parameterTypes) {
-            if (!first) out << ", ";
-            out << "\"" << parameter << "\"";
+            if (!first) out << ", "sv;
+            out << "\""sv << parameter << "\""sv;
             first = false;
         }
-        out << "]";
-        out << "}";
+        out << "]"sv;
+        out << "}"sv;
     }
 };
 
@@ -141,11 +147,11 @@ struct CallSite {
     }
 
     void toJson(boost::iostreams::filtering_ostream& out) const {
-        out << "{";
-        out << "\"method\": \"" << method << "\",";
-        out << "\"line\": " << lineNumber << ",";
-        out << "\"pc\": " << pc;
-        out << "}";
+        out << "{"sv;
+        out << "\"method\": \""sv << method << "\","sv;
+        out << "\"line\": "sv << lineNumber << ","sv;
+        out << "\"pc\": "sv << pc;
+        out << "}"sv;
     }
 };
 
@@ -214,9 +220,10 @@ static long methodCalls = 0;
 
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
 
-    if (methodCalls % 10000 == 0) {
-        std::cout << "callSitePool.size = " << callSitePool.size() << "\n";
-        std::cout << "methodPool.size = " << methodPool.size() << "\n" << std::flush;
+    if (methodCalls % 100000 == 0) {
+        std::cout << "callSitePool.size = "sv << callSitePool.size() << "\n"sv;
+        std::cout << "methodPool.size = "sv << methodPool.size() << "\n"sv;
+        std::cout.flush();
     }
     methodCalls += 1;
 
@@ -238,39 +245,53 @@ void return_cg() {
 
     // Create a filtering stream and push the Gzip compressor
     boost::iostreams::filtering_ostream out;
-    out.push(boost::iostreams::gzip_compressor());
+
+    // Explicitly restrict the buffer size to 32KB
+    boost::iostreams::gzip_params params;
+    out.push(boost::iostreams::gzip_compressor(params, 32768));
     out.push(call_graph_file); // Pipe the compressed data directly to your file
 
-    out << "{";
+    unsigned int count = 0;
 
-        out << "\"callTree\": ";
+    out << "{"sv;
+
+        out << "\"callTree\": "sv;
         callTree.toJson(out);
 
-        out << ", \"callSites\": {";
+        out << ", \"callSites\": {"sv;
         bool first = true;
         for (const auto& callSite : callSitePool) {
-            if (!first) out << ",\n";
+            if (!first) out << ",\n"sv;
 
-            out << "\"" << std::addressof(callSite) << "\": ";
+            out << "\""sv << std::addressof(callSite) << "\": "sv;
             callSite.toJson(out);
 
             first = false;
+            if (++count % 1000 == 0)
+                out.flush();
         }
-        out << "}";
+        out << "}"sv;
 
-        out << ", \"methods\": {";
+        count = 0;
+
+        out << ", \"methods\": {"sv;
         first = true;
         for (const auto& method : methodPool) {
-            if (!first) out << ",\n";
+            if (!first) out << ",\n"sv;
 
-            out << "\"" << std::addressof(method) << "\": ";
+            out << "\""sv << std::addressof(method) << "\": "sv;
             method.toJson(out);
 
             first = false;
-        }
-        out << "}";
 
-    out << "}";
+            if (++count % 1000 == 0)
+                out.flush();
+        }
+        out << "}"sv;
+
+    out << "}"sv;
+
+    boost::iostreams::close(out);
 }
 
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti_env, JNIEnv* jni_env) {
