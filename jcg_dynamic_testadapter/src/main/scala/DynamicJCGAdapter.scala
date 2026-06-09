@@ -69,6 +69,10 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             }
             println(s"LD_LIBRARY_PATH=${processBuilder.environment().get("LD_LIBRARY_PATH")}")
 
+            // For finding memory leaks
+//            processBuilder.environment().put("LD_PRELOAD", "/usr/lib/x86_64-linux-gnu/libasan.so.8")
+//            processBuilder.environment().put("ASAN_OPTIONS", "detect_leaks=1:allow_user_segv_handler=1")
+
             val before = System.nanoTime
             processBuilder.start().waitFor()
             val after = System.nanoTime

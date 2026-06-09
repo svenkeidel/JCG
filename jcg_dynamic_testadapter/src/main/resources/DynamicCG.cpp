@@ -139,6 +139,7 @@ struct CallSite {
         } else {
             lineNumber = -1;
         }
+        if (lineNumbers != NULL) jvmti->Deallocate((unsigned char*)lineNumbers);
 
         pc = loc;
     }
