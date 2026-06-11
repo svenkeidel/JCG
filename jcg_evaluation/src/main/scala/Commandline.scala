@@ -76,6 +76,7 @@ object Commandline {
                         AdapterOptions.makeJavaOptions(
                             projectSpec.main.orNull,
                             projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
+                            projectSpec.java,
                             jreLocations(projectSpec.java),
                             target = projectSpec.target(options.projectsDir.toFile).toString,
                             jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),

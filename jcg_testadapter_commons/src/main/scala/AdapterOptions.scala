@@ -1,8 +1,9 @@
 import java.nio.file.Path
+import scala.reflect.ClassTag
 
 class AdapterOptions private (val options: Map[String, Any]) {
 
-    def getOptionAs[T](key: String): Option[T] = options.get(key).flatMap {
+    private def getOptionAs[T: ClassTag](key: String): Option[T] = options.get(key).flatMap {
         case value: T => Some(value)
         case _        => None
     }
@@ -14,6 +15,8 @@ class AdapterOptions private (val options: Map[String, Any]) {
     def getBoolean(key: String): Boolean = getOptionAs[Boolean](key).getOrElse(false)
 
     def getStringArray(key: String): Array[String] = getOptionAs[Array[String]](key).getOrElse(Array.empty)
+
+    def getInt(key: String): Int = getOptionAs[Int](key).getOrElse(-1)
 }
 
 object AdapterOptions {
@@ -24,6 +27,7 @@ object AdapterOptions {
     def makeJavaOptions(
                            mainClass:   String,
                            classPath:   Array[String],
+                           javaVersion: Int,
                            JDKPath:     Path,
                            analyzeJDK:  Boolean,
                            target:      String        = "",
@@ -33,6 +37,7 @@ object AdapterOptions {
         new AdapterOptions(Map(
             "mainClass" -> mainClass,
             "classPath" -> classPath,
+            "javaVersion" -> javaVersion,
             "JDKPath" -> JDKPath,
             "target" -> target,
             "jvmArgs" -> jvmArgs,

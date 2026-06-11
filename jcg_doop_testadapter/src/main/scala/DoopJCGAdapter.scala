@@ -2,16 +2,13 @@
 import java.io.File
 import java.io.Writer
 import java.net.URL
-import java.nio.file.Files
-
+import java.nio.file.{Files, Paths}
 import scala.collection.mutable
 import scala.io.Source
 import scala.sys.process.Process
-
 import org.apache.commons.io.FileUtils
 import play.api.libs.json.Json
 import play.api.libs.json.JsValue
-
 import org.opalj.br.ClassFile
 import org.opalj.br.FieldType
 import org.opalj.br.FieldTypes
@@ -67,114 +64,116 @@ object DoopAdapter extends JavaTestAdapter {
         methods.head
     }
 
-    private def computeCallSite(
-        declaredTgt:  String,
-        number:       Int,
-        tgts:         Set[String],
-        callerMethod: Method,
-        callerOpal:   org.opalj.br.Method
-    )(implicit
-        classFile: ClassFile,
-      project: SomeProject): CallSite = {
-        assert(tgts.nonEmpty)
-        val firstTgt = toMethod(tgts.head)
-        val tgtReturnType = ReturnType(firstTgt.returnType)
-        val tgtParamTypes: FieldTypes = scala.collection.immutable.ArraySeq(firstTgt.parameterTypes.map(FieldType.apply)*)
-        val tgtMD = MethodDescriptor(tgtParamTypes, tgtReturnType)
-        val split = declaredTgt.split("""\.""")
-        val declaredType = s"L${split.slice(0, split.size - 1).mkString("/")};"
-        val name = split.last.replace("'", "")
-        val tgtMethods = tgts.map(toMethod)
-        // todo what abot <clinit> etc where no call is in the bytecode
-        val declObjType = FieldType(declaredType)
-
-        val getInstr: PartialFunction[Instruction, Instruction] =
-            if(declaredTgt.startsWith("new ")) {
-                case instr: NEW if(instr.classType.toJava == declaredTgt.stripPrefix("new ")) =>
-                    instr
-            }
-            else
-            {
-                // todo what about lambdas?
-                case instr: MethodInvocationInstruction if (
-                    instr.name == name &&
-                        (instr.declaringClass == declObjType ||
-                            declObjType == ClassType.Object && instr.declaringClass.isArrayType)
-                    ) ⇒ instr //&& instr.declaringClass == FieldType(declaredType) ⇒ instr // && instr.methodDescriptor == tgtMD ⇒ instr
-                //throw new Error()
-            }
-
-        val calls = callerOpal.body.get.collect(getInstr)
-
-        if (calls.size <= number && callerOpal.isBridge) {
-            computeCallSite(declaredTgt, number, tgts, callerMethod, resolveBridgeMethod(callerOpal))
-        } else {
-            assert(calls.size > number)
-            val pc = calls(number).pc
-            val lineNumber = callerOpal.body.get.lineNumber(pc)
-
-            CallSite(
-                firstTgt.copy(declaringClass = declaredType),
-                lineNumber.getOrElse(-1),
-                Some(pc),
-                tgtMethods
-            )
-        }
-    }
+//    private def computeCallSite(
+//        declaredTgt:  String,
+//        number:       Int,
+//        tgts:         Set[String],
+//        callerMethod: Method,
+//        callerOpal:   org.opalj.br.Method
+//    )(implicit
+//        classFile: ClassFile,
+//      project: SomeProject): CallSite = {
+//        assert(tgts.nonEmpty)
+//        val firstTgt = toMethod(tgts.head)
+//        val tgtReturnType = ReturnType(firstTgt.returnType)
+//        val tgtParamTypes: FieldTypes = scala.collection.immutable.ArraySeq(firstTgt.parameterTypes.map(FieldType.apply)*)
+//        val tgtMD = MethodDescriptor(tgtParamTypes, tgtReturnType)
+//        val split = declaredTgt.split("""\.""")
+//        val declaredType = s"L${split.slice(0, split.size - 1).mkString("/")};"
+//        val name = split.last.replace("'", "")
+//        val tgtMethods = tgts.map(toMethod)
+//        // todo what abot <clinit> etc where no call is in the bytecode
+//        val declObjType = FieldType(declaredType)
+//
+//        val getInstr: PartialFunction[Instruction, Instruction] =
+//            if(declaredTgt.startsWith("new ")) {
+//                case instr: NEW if(instr.classType.toJava == declaredTgt.stripPrefix("new ")) =>
+//                    instr
+//            }
+//            else
+//            {
+//                // todo what about lambdas?
+//                case instr: MethodInvocationInstruction if (
+//                    instr.name == name &&
+//                        (instr.declaringClass == declObjType ||
+//                            declObjType == ClassType.Object && instr.declaringClass.isArrayType)
+//                    ) ⇒ instr //&& instr.declaringClass == FieldType(declaredType) ⇒ instr // && instr.methodDescriptor == tgtMD ⇒ instr
+//                //throw new Error()
+//            }
+//
+//        val calls = callerOpal.body.get.collect(getInstr)
+//
+//        if (calls.size <= number && callerOpal.isBridge) {
+//            computeCallSite(declaredTgt, number, tgts, callerMethod, resolveBridgeMethod(callerOpal))
+//        } else {
+//            assert(calls.size > number)
+//            val pc = calls(number).pc
+//            val lineNumber = callerOpal.body.get.lineNumber(pc)
+//
+//            CallSite(
+//                firstTgt.copy(declaringClass = declaredType),
+//                lineNumber.getOrElse(-1),
+//                Some(pc),
+//                tgtMethods
+//            )
+//        }
+//    }
 
     private def convertToReachableMethods(
         callGraph: Map[String, Map[(String, Int), Set[String]]]
     )(implicit project: Project[URL]): ReachableMethods = {
         var reachableMethods = Set.empty[ReachableMethod]
         var reachableMethodsSet = Set.empty[Method]
+        ???
 
-        for {
-            (caller, callSites) ← callGraph
-        } {
-            val callerMethod = toMethod(caller)
-            reachableMethodsSet += callerMethod
-            var resultingCallSites = Set.empty[CallSite]
-            project.classFile(toClassType(callerMethod.declaringClass)) match {
-                case Some(cf) ⇒
-                    implicit val classFile: ClassFile = cf
-                    val returnType = ReturnType(callerMethod.returnType)
-                    val parameterTypes: FieldTypes = scala.collection.immutable.ArraySeq(callerMethod.parameterTypes.map(FieldType.apply)*)
-                    val md = MethodDescriptor(parameterTypes, returnType)
-
-                    cf.findMethod(callerMethod.name, md) match {
-                        case Some(callerOpal) if callerOpal.body.isDefined ⇒
-                            for (((declaredTgt, number), tgts) ← callSites) {
-                                try {
-                                    resultingCallSites += computeCallSite(
-                                        declaredTgt, number, tgts, callerMethod, callerOpal
-                                    )
-                                } catch {
-                                    case _: AssertionError ⇒
-                                        println(s"Callsite not found: $declaredTgt/$number in $callerMethod")
-                                }
-
-                            }
-                        case _ ⇒
-                        // todo
-                        //throw new IllegalArgumentException()
-                    }
-                case None ⇒
-            }
-            reachableMethods += ReachableMethod(callerMethod, resultingCallSites)
-        }
-
-        for {
-            (_, callSites) ← callGraph
-            (_, tgts) ← callSites
-            tgt ← tgts
-        } {
-            val calleeMethod = toMethod(tgt)
-            if (!reachableMethodsSet.contains(calleeMethod)) {
-                reachableMethodsSet += calleeMethod
-                reachableMethods += ReachableMethod(calleeMethod, Set.empty)
-            }
-        }
-        ReachableMethods(reachableMethods)
+//        for {
+//            (caller, callSites) ← callGraph
+//        } {
+//            val callerMethod = toMethod(caller)
+//            reachableMethodsSet += callerMethod
+//            var resultingCallSites = Set.empty[CallSite]
+//            project.classFile(toClassType(callerMethod.declaringClass)) match {
+//                case Some(cf) ⇒
+//                    implicit val classFile: ClassFile = cf
+//                    val returnType = ReturnType(callerMethod.returnType)
+//                    val parameterTypes: FieldTypes = scala.collection.immutable.ArraySeq(callerMethod.parameterTypes.map(FieldType.apply)*)
+//                    val md = MethodDescriptor(parameterTypes, returnType)
+//
+//                    cf.findMethod(callerMethod.name, md) match {
+//                        case Some(callerOpal) if callerOpal.body.isDefined ⇒
+//                            for (((declaredTgt, number), tgts) ← callSites) {
+//                                try {
+//                                    ???
+////                                    resultingCallSites += computeCallSite(
+////                                        declaredTgt, number, tgts, callerMethod, callerOpal
+////                                    )
+//                                } catch {
+//                                    case _: AssertionError ⇒
+//                                        println(s"Callsite not found: $declaredTgt/$number in $callerMethod")
+//                                }
+//
+//                            }
+//                        case _ ⇒
+//                        // todo
+//                        //throw new IllegalArgumentException()
+//                    }
+//                case None ⇒
+//            }
+//            reachableMethods += ReachableMethod(callerMethod, resultingCallSites)
+//        }
+//
+//        for {
+//            (_, callSites) ← callGraph
+//            (_, tgts) ← callSites
+//            tgt ← tgts
+//        } {
+//            val calleeMethod = toMethod(tgt)
+//            if (!reachableMethodsSet.contains(calleeMethod)) {
+//                reachableMethodsSet += calleeMethod
+//                reachableMethods += ReachableMethod(calleeMethod, Set.empty)
+//            }
+//        }
+//        ReachableMethods(reachableMethods)
     }
 
     private def extractDoopCG(
@@ -278,63 +277,67 @@ object DoopAdapter extends JavaTestAdapter {
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
         val JDKPath = adapterOptions.getPath("JDKPath")
+        val javaVersion = adapterOptions.getInt("javaVersion")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
         assert(env.containsKey("DOOP_HOME"))
-        val doopHome = new File(env.get("DOOP_HOME"))
-        assert(doopHome.exists())
-        assert(doopHome.isDirectory)
+        val doopHome = Paths.get(env.get("DOOP_HOME"))
+        assert(Files.exists(doopHome))
+        assert(Files.isDirectory(doopHome))
 
-        val doopPlatformDirs = Files.createTempDirectory(null).toFile
-        val doopJDKPath = new File(doopPlatformDirs, "JREs/jre1.8/lib/")
-        doopJDKPath.mkdirs()
-        FileUtils.copyDirectory(JDKPath.toFile, doopJDKPath)
+//        assert(env.containsKey("DOOP_PLATFORMS_LIB"))
+//        val doopPlatformsLib = Paths.get(env.get("DOOP_PLATFORMS_LIB"))
+//        assert(Files.exists(doopPlatformsLib))
+//        assert(Files.isDirectory(doopPlatformsLib))
 
-        val outDir = Files.createTempDirectory(null).toFile
+        val outDir = Files.createTempDirectory(null)
 
-        assert(algorithm == "context-insensitive")
+        try {
 
-        var args = Array("./bin/doop", "-a", "context-insensitive", "-t", "1440", "--platform", "java_8", "-i", inputDirPath) ++ classPath
-//        if (analyzeJDK) {
-//           args ++= JRELocation.getAllJREJars(JDKPath).map(_.getCanonicalPath)
-//        }
+            var args = Array(
+                "./bin/doop",
+                "-a",
+                "context-insensitive",
+                "-t", "1440",
+                "--platform", s"java_$javaVersion",
+                "--use-local-java-platform", JDKPath.toAbsolutePath.toString,
+                "-i", inputDirPath) ++ classPath
+            if (analyzeJDK) {
+               args ++= JRELocation.getAllJREJars(JDKPath).map(_.toString)
+            }
 
-        // args ++= Array("--reflection-classic")
+            // args ++= Array("--reflection-classic")
 
-        if (mainClass != null)
-            args ++= Array("--main", mainClass)
+            if (mainClass != null)
+                args ++= Array("--main", mainClass)
 
-        val status = Process(Array("./bin/doop", "-h"), Some(doopHome)).!
-        if (status != 0)
-            throw new RuntimeException("failed to run doop")
 
-        val before = System.nanoTime()
+            println(args.mkString(" "))
 
-        println(args.mkString(" "))
+            val before = System.nanoTime()
+            Process(
+                args,
+                Some(doopHome.toFile),
+                "DOOP_HOME" → doopHome.toAbsolutePath.toString,
+                "DOOP_OUT" → outDir.toAbsolutePath.toString,
+//                "DOOP_PLATFORMS_LIB" → doopPlatformsLib.toAbsolutePath.toString
+            ).!
+            val after = System.nanoTime()
 
-        Process(
-            args,
-            Some(doopHome),
-            "DOOP_HOME" → doopHome.getAbsolutePath,
-            "DOOP_OUT" → outDir.getAbsolutePath,
-            "DOOP_PLATFORMS_LIB" → doopPlatformDirs.getAbsolutePath
-        ).!
+            val cgCsv = outDir.resolve("last-analysis", "CallGraphEdge.csv")
+            val rmCsv = outDir.resolve("last-analysis", "Reachable.csv")
+            createJsonRepresentation(
+                Source.fromFile(cgCsv.toFile),
+                Source.fromFile(rmCsv.toFile),
+                new File(inputDirPath),
+                JDKPath.toFile,
+                output
+            )
 
-        val after = System.nanoTime()
+            after - before
+        } finally {
+            FileUtils.deleteDirectory(outDir.toFile)
+        }
 
-        val cgCsv = new File(doopHome, "last-analysis/CallGraphEdge.csv")
-        val rmCsv = new File(doopHome, "last-analysis/Reachable.csv")
-        createJsonRepresentation(
-            Source.fromFile(cgCsv),
-            Source.fromFile(rmCsv),
-            new File(inputDirPath),
-            JDKPath.toFile,
-            output
-        )
-
-        FileUtils.deleteDirectory(doopPlatformDirs)
-        FileUtils.deleteDirectory(outDir)
-
-        after - before
     }
 }

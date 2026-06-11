@@ -24,6 +24,7 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
 
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
+        val javaVersion = adapterOptions.getInt("javaVersion")
         val jdkPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
         val target = adapterOptions.getString("target")
@@ -45,7 +46,7 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
                 "java",
                 "-jar", taieJarPath.toString,
                 "--main-class", mainClass,
-                "-java", "8",
+                "-java", javaVersion.toString,
                 "--jre-dir", jdkPath.toString,
                 "--class-path", cp.mkString(":"),
                 "-scope", "ALL",
