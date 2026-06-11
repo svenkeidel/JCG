@@ -244,9 +244,13 @@ struct CallTree {
 static CallTree callTree;
 
 
-static long methodCalls = 0;
+static unsigned long methodCalls = 0;
+
+static std::mutex methodEntryMutex;
 
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
+
+    std::lock_guard<std::mutex> lock(methodEntryMutex);
 
     if (methodCalls % 100000 == 0) {
         std::cout << "callTree.size = "sv << callTree.size() << ", callTree.bucketSum = " << callTree.bucketSum() << "\n"sv;
