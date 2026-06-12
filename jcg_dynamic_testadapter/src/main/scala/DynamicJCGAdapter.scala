@@ -34,7 +34,16 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         val jvmArgs = adapterOptions.getStringArray("jvmArgs")
         val programArgs = adapterOptions.getStringArray("analysisArgs")
 
-        val javaPath = JDKPath.getParent.toAbsolutePath.toString + "/bin/java"
+        val javaPath = {
+            // JDK > 8
+            if(Files.exists(JDKPath.resolve("bin", "java")))
+                JDKPath.resolve("bin", "java")
+            // JDK <= 8
+            else if (Files.exists(JDKPath.getParent.resolve("bin", "java")))
+                JDKPath.getParent.resolve("bin", "java")
+            else
+                throw java.io.IOException(s"Cannot find java exectuble in $JDKPath")
+        }
         val agentPath = Paths.get("jcg_dynamic_testadapter", "src", "main", "resources", "DynamicCG.so")
 
         val callGraphPath = Files.createTempFile("callgraph", ".json.gz")
@@ -46,7 +55,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             val reachableMethods = mutable.Set[Method]()
             val edges = mutable.Map[Method, mutable.Map[(Int, Int), mutable.Set[Method]]]()
 
-            var args = List(javaPath)
+            var args = List(javaPath.toAbsolutePath.toString)
             args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
             args ++= jvmArgs
             args :+= s"-agentpath:${agentPath.toAbsolutePath}=$agentArgs"
