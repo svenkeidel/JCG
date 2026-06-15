@@ -1,28 +1,16 @@
 
 import java.io.File
 import java.io.Writer
-import java.net.URL
 import java.nio.file.{Files, Path, Paths}
 import scala.collection.mutable
 import scala.io.Source
 import scala.sys.process.Process
 import org.apache.commons.io.FileUtils
 import play.api.libs.json.Json
-import play.api.libs.json.JsValue
-import org.opalj.br.ClassFile
-import org.opalj.br.FieldType
-import org.opalj.br.FieldTypes
-import org.opalj.br.MethodDescriptor
 import org.opalj.br.ClassType
-import org.opalj.br.ReferenceType
-import org.opalj.br.ReturnType
-import org.opalj.br.analyses.Project
-import org.opalj.br.analyses.SomeProject
-import org.opalj.br.instructions.Instruction
-import org.opalj.br.instructions.NEW
-import org.opalj.br.instructions.MethodInvocationInstruction
 
 import scala.util.Using
+import scala.math.pow
 
 /**
  * This is an experimental stage [[JavaTestAdapter]] as it is not possible to run Doop without
@@ -213,19 +201,21 @@ object DoopAdapter extends JavaTestAdapter {
 
         try {
 
+            val memoryGiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024,3)).round
+
             var args = Array(
                 "./bin/doop",
-                "-a",
-                "context-insensitive",
-                "-t", "1440",
+                "--analysis", "context-insensitive",
+                "--reflection",
+                "--timeout", "1440",
+                "--max-memory", s"${memoryGiB}G",
                 "--platform", s"java_$javaVersion",
                 "--use-local-java-platform", JDKPath.toAbsolutePath.toString,
                 "-i", inputDirPath) ++ classPath
+
             if (analyzeJDK) {
                args ++= JRELocation.getAllJREJars(JDKPath).map(_.toString)
             }
-
-            // args ++= Array("--reflection-classic")
 
             if (mainClass != null)
                 args ++= Array("--main", mainClass)
@@ -238,7 +228,8 @@ object DoopAdapter extends JavaTestAdapter {
                 args,
                 Some(doopHome.toFile),
                 "DOOP_HOME" -> doopHome.toAbsolutePath.toString,
-                "DOOP_OUT" -> outDir.toAbsolutePath.toString
+                "DOOP_OUT" -> outDir.toAbsolutePath.toString,
+                "DEFAULT_JVM_OPTS" -> s"\"-DmaxHeapSize=${memoryGiB}G\" \"-DstackSize=1000m\""
             ).!
             val after = System.nanoTime()
 
