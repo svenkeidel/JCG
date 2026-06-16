@@ -208,7 +208,6 @@ object DoopAdapter extends JavaTestAdapter {
                 "--analysis", "context-insensitive",
                 "--reflection",
                 "--timeout", "1440",
-                "--max-memory", s"${memoryGiB}G",
                 "--platform", s"java_$javaVersion",
                 "--use-local-java-platform", JDKPath.toAbsolutePath.toString,
                 "-i", inputDirPath) ++ classPath
