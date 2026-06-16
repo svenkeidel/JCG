@@ -47,7 +47,7 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
                 "-jar", taieJarPath.toString,
                 "--main-class", mainClass,
                 "-java", javaVersion.toString,
-                "--jre-dir", jdkPath.toString,
+                "--jre-dir", if(jdkPath.endsWith("jre")) jdkPath.getParent.toString else jdkPath.toString,
                 "--class-path", cp.mkString(":"),
                 "-scope", "ALL",
                 "-a", "cg=algorithm:" + algoTaieName + ";dump:true;dump-methods:true",

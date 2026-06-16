@@ -201,8 +201,6 @@ object DoopAdapter extends JavaTestAdapter {
 
         try {
 
-            val memoryGiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024,3)).round
-
             var args = Array(
                 "./bin/doop",
                 "--analysis", "context-insensitive",
@@ -222,13 +220,14 @@ object DoopAdapter extends JavaTestAdapter {
 
             println(args.mkString(" "))
 
+            val memoryMiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024,2)).round
             val before = System.nanoTime()
             Process(
                 args,
                 Some(doopHome.toFile),
                 "DOOP_HOME" -> doopHome.toAbsolutePath.toString,
                 "DOOP_OUT" -> outDir.toAbsolutePath.toString,
-                "DEFAULT_JVM_OPTS" -> s"\"-DmaxHeapSize=${memoryGiB}G\" \"-DstackSize=1000m\""
+                "DEFAULT_JVM_OPTS" -> s"\"-DmaxHeapSize=${memoryMiB}m\" \"-DstackSize=1000m\""
             ).!
             val after = System.nanoTime()
 
