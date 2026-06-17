@@ -295,7 +295,7 @@ void return_cg() {
 
         boost::iostreams::flush(out);
 
-        std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
+        // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
 
         std::cout << "Write call-sites ...\n" << std::flush;
 
@@ -313,7 +313,7 @@ void return_cg() {
 
         boost::iostreams::flush(out);
 
-        std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
+        // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
 
         std::cout << "Write methods ...\n" << std::flush;
 
@@ -330,14 +330,14 @@ void return_cg() {
         out << "}"sv;
 
         boost::iostreams::flush(out);
-        std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
+        // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
     }
 
     out << "}"sv;
 
     boost::iostreams::close(out);
 
-    std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
+    // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
 }
 
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti_env, JNIEnv* jni_env) {
