@@ -11,6 +11,7 @@ import sootup.callgraph.CallGraphAlgorithm
 import sootup.callgraph.ClassHierarchyAnalysisAlgorithm
 import sootup.callgraph.RapidTypeAnalysisAlgorithm
 import sootup.core.inputlocation.AnalysisInputLocation
+import sootup.core.model.SourceType
 import sootup.core.signatures.MethodSignature
 import sootup.core.types.ArrayType
 import sootup.core.types.ClassType
@@ -24,19 +25,17 @@ import sootup.core.types.PrimitiveType.LongType
 import sootup.core.types.PrimitiveType.ShortType
 import sootup.core.types.Type
 import sootup.core.types.VoidType
-import sootup.java.bytecode.frontend.inputlocation.JavaClassPathAnalysisInputLocation
+import sootup.java.bytecode.frontend.inputlocation.*
 import sootup.java.core.views.JavaView
 
-import java.nio.file.Paths
+import java.nio.file.{Files, Paths}
 
 object SootUpJCGAdapter extends JavaTestAdapter {
 
     private val CHA = "CHA"
     private val RTA = "RTA"
-    private val CFA0 = "0-CFA"
-    private val CFA1 = "1-CFA"
 
-    val possibleAlgorithms: Array[String] = Array(CHA, RTA, CFA0, CFA1)
+    val possibleAlgorithms: Array[String] = Array(CHA, RTA)
 
     val frameworkName: String = "SootUp"
     def serializeCG(
@@ -49,19 +48,21 @@ object SootUpJCGAdapter extends JavaTestAdapter {
         val classPath = adapterOptions.getStringArray("classPath")
         val JDKPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
+        val javaVersion = adapterOptions.getInt("javaVersion")
 
-        val classPathString = if(classPath.isEmpty) "" else classPath.mkString(File.pathSeparator, File.pathSeparator, "")
-
-        val cp =
-            if(analyzeJDK || !Seq(CHA, RTA).contains(algorithm)){
-                val jreJars = JRELocation.getAllJREJars(JDKPath)
-                val jreJarString = if(jreJars.isEmpty) "" else jreJars.mkString(File.pathSeparator, File.pathSeparator, "")
-                inputDirPath + classPathString + jreJarString
+        val jreInputLocation = {
+            if(javaVersion <= 8) {
+                if(Files.exists(JDKPath.resolve("jre", "lib", "rt.jar")))
+                    ArchiveBasedAnalysisInputLocation(JDKPath.resolve("jre", "lib", "rt.jar"), SourceType.Library)
+                else if (Files.exists(JDKPath.resolve("lib", "rt.jar")))
+                    ArchiveBasedAnalysisInputLocation(JDKPath.resolve("lib", "rt.jar"), SourceType.Library)
+                else throw java.io.IOException("Cannot find rt.jar")
             } else {
-                inputDirPath + classPathString
+                CustomJrtFileSystemAnalysisInputLocation(JDKPath.resolve("lib", "modules"), SourceType.Library)
             }
-
-        val inputLocations: List[AnalysisInputLocation] = List(new JavaClassPathAnalysisInputLocation(cp))
+        }
+        val inputLocations = List(JavaClassPathAnalysisInputLocation(inputDirPath), jreInputLocation)
+            ++ classPath.map(JavaClassPathAnalysisInputLocation(_)).toList
 
         val view = new JavaView(inputLocations.asJava)
 
@@ -83,23 +84,9 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             (cg, cg.getEntryMethods.asScala)
         }
 
-        val (cg: CallGraph, entrypoints: Iterable[MethodSignature]) =
-            if (algorithm.contains(CHA)) {
-                computeCG(new ClassHierarchyAnalysisAlgorithm(view))
-        } else if (algorithm.contains(RTA)) {
-                computeCG(new RapidTypeAnalysisAlgorithm(view))
-        } else {
-            val ptaPattern = if(algorithm.contains(CFA0))
-                new PTAPattern("insens") // "2o"=>2OBJ, "1c"=>1CFA, etc.
-            else if (algorithm.contains(CFA1))
-                new PTAPattern("1c") // "2o"=>2OBJ, "1c"=>1CFA, etc.
-            else {
-                throw new IllegalArgumentException(s"unknown algorithm $algorithm")
-            }
-            PTAConfig.v()
-            val pta = PTAFactory.createPTA(ptaPattern, view, mainClass)
-            pta.run()
-            (pta.getCallGraph(), pta.getNakedReachableMethods.asScala.map(_.getSignature))
+        val (cg: CallGraph, entrypoints: Iterable[MethodSignature]) = algorithm match {
+            case CHA => computeCG(new ClassHierarchyAnalysisAlgorithm(view))
+            case RTA => computeCG(new RapidTypeAnalysisAlgorithm(view))
         }
 
         val after = System.nanoTime
@@ -175,10 +162,10 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             case _: CharType => "C"
             case _: DoubleType => "D"
             case _: FloatType => "F"
-            case _: IntType => "I"
-            case _: LongType => "J"
             case _: ShortType => "S"
             case _: BooleanType => "Z"
+            case _: IntType => "I"
+            case _: LongType => "J"
             case _: VoidType => "V"
             case _   => throw new IllegalArgumentException(s"Unknow type $javaType")
         }

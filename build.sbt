@@ -10,7 +10,7 @@ lazy val commonSettings = Seq(
     organization := "de.opal-project",
     homepage := Some(url("https://bitbucket.org/delors/jcg")),
     licenses := Seq("BSD-2-Clause" -> url("http://opensource.org/licenses/BSD-2-Clause")),
-    resolvers ++= Resolver.sonatypeOssRepos("snapshots"),
+    resolvers += Resolver.sonatypeCentralSnapshots,
     version := "1.0",
     publishMavenStyle := true,
     publishTo := MavenPublishing.publishTo(isSnapshot.value),
@@ -57,7 +57,7 @@ lazy val jcg_annotation_matcher = project.settings(
 lazy val jcg_wala_testadapter = project.settings(
     commonSettings,
     name := "JCG WALA Test Adapter",
-    resolvers ++= Resolver.sonatypeOssRepos("snapshots"),
+    resolvers += Resolver.sonatypeCentralSnapshots,
     libraryDependencies += "com.ibm.wala" % "com.ibm.wala.core" % "1.7.1",
     libraryDependencies += "com.ibm.wala" % "com.ibm.wala.util" % "1.7.1",
     libraryDependencies += "com.ibm.wala" % "com.ibm.wala.shrike" % "1.7.1",
@@ -83,7 +83,7 @@ lazy val jcg_soot_testadapter = project.settings(
     resolvers += "Google Maven" at "https://maven.google.com/",
     libraryDependencies += "org.soot-oss" % "soot" % "4.7.1",
     libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
-    aggregate in assembly := false,
+    assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)
 
@@ -98,7 +98,9 @@ lazy val jcg_sootup_testadapter = project.settings(
     libraryDependencies += "org.soot-oss" % "sootup.qilin" % "2.0.0",
 
     libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
-    aggregate in assembly := false,
+    libraryDependencies += "org.slf4j" % "slf4j-simple" % "2.0.13",
+    libraryDependencies += "org.jspecify" % "jspecify" % "1.0.0",
+    assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)
 
