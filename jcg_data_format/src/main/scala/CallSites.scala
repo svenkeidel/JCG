@@ -53,7 +53,7 @@ object CallSite {
 case class Method(name: String, declaringClass: String, returnType: String, parameterTypes: List[String]) {
 
     override def toString: String = {
-        s"$declaringClass { $returnType $name(${parameterTypes.mkString(", ")})}"
+        s"${declaringClass.substring(1, declaringClass.length - 1)}: $returnType $name(${parameterTypes.mkString("")})"
     }
 
     def nameBasedEquals(other: Method): Boolean = {

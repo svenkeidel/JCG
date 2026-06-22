@@ -77,7 +77,8 @@ case class PrecisionRecall(
         result.toSet
 
 
-case class Edge(caller: Method, line: Option[Int], target: Method)
+case class Edge(caller: Method, line: Option[Int], target: Method):
+    override def toString: String = s"$caller: ${line.iterator.mkString} -> $target"
 
 object Edge {
     implicit val methodReads: Reads[Edge] = Json.reads[Edge]

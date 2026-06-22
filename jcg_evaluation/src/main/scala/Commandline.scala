@@ -254,19 +254,22 @@ object Commandline {
                 val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.json.gz")
                 Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
                     writer.write(
-                        Json.prettyPrint(
-                            scope match {
-                                case "methods" => toJson(precisionRecall.methods)(metric)
-                                case "edges" =>
-                                    metric match
-                                        case "false-negative-boundary" => Json.toJson(precisionRecall.edgesFalseNegativeBoundary)
-                                        case _ => toJson(precisionRecall.edges)(metric)
-                                case "edges-with-line-numbers" =>
-                                    metric match
-                                        case "false-negative-boundary" => Json.toJson(precisionRecall.edgesWithCallSiteLineNumbersFalseNegativeBoundary)
-                                        case _ => toJson(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
-                            }
-                        ).getBytes(StandardCharsets.UTF_8)
+                        (scope match {
+                            case "methods" =>
+                                classificationToString(precisionRecall.methods)(metric)
+                            case "edges" =>
+                                metric match
+                                    case "false-negative-boundary" =>
+                                        precisionRecall.edgesFalseNegativeBoundary.mkString("\n")
+                                    case _ =>
+                                        classificationToString(precisionRecall.edges)(metric)
+                            case "edges-with-line-numbers" =>
+                                metric match
+                                    case "false-negative-boundary" =>
+                                        precisionRecall.edgesWithCallSiteLineNumbersFalseNegativeBoundary.mkString("\n")
+                                    case _ =>
+                                        classificationToString(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
+                        }).getBytes(StandardCharsets.UTF_8)
                     )
                 }
             }
@@ -276,6 +279,12 @@ object Commandline {
     }
 
     ///////////////////////////// Helper Functions //////////////////////////////////////
+
+    private def classificationToString[T](classification: Classification[T]): String => String = {
+        case "true-positives"  => classification.truePositive.mkString("\n")
+        case "false-positives" => classification.falsePositive.mkString("\n")
+        case "false-negatives" => classification.falseNegative.mkString("\n")
+    }
 
     private def toJson[T : Writes](classification: Classification[T]): String => JsValue = {
         case "true-positives"  => Json.toJson(classification.truePositive)
