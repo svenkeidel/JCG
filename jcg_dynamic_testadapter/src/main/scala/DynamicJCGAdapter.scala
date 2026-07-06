@@ -194,8 +194,8 @@ object DynamicJCGAdapter extends JavaTestAdapter {
                 } catch {
                     case exception: Throwable =>
                         System.err.println(s"Cannot find declared callsite of ${callingMethod.declaringClass}.${callingMethod}:${callSite.pc}: ${exception.getMessage()}")
-                        if(exception.getMessage.strip().equals("null"))
-                            exception.printStackTrace(System.err)
+                        if(!exception.isInstanceOf[IllegalArgumentException])
+                            System.err.println(exception)
                         callSite
                 }
 
