@@ -181,21 +181,21 @@ object DynamicJCGAdapter extends JavaTestAdapter {
                 val callingMethod = methods(callSite.method);
                 val callingClass = toClassType(callingMethod.declaringClass)
 
-                val maybeUpdateCallSite = for(
-                    classFile <- project.classFile(callingClass);
-                    returnType = ReturnType(callingMethod.returnType);
-                    parameterTypes = scala.collection.compat.immutable.ArraySeq(callingMethod.parameterTypes.map(FieldType.apply): _*);
-                    md = MethodDescriptor(parameterTypes, returnType);
-                    method <- classFile.findMethod(callingMethod.name, md);
-                    code <- method.body;
-                    pcAndInstruction <- code.iterator.find(instruction => instruction.pc == callSite.pc)
-                ) yield(
-                    pcAndInstruction.instruction match
-                      case invoke: InvocationInstruction => callSite.addDeclaredTarget(invoke)
-                      case _ => callSite
-                )
-
-                maybeUpdateCallSite.getOrElse(callSite)
+                try {
+                    val classFile = project.classFile(callingClass).getOrElse(throw IllegalArgumentException(s"class ${callingMethod.declaringClass} not found"))
+                    val returnType = ReturnType(callingMethod.returnType);
+                    val parameterTypes = scala.collection.compat.immutable.ArraySeq(callingMethod.parameterTypes.map(FieldType.apply): _*);
+                    val md = MethodDescriptor(parameterTypes, returnType);
+                    val method = classFile.findMethod(callingMethod.name, md).getOrElse(throw IllegalArgumentException(s"method ${callingMethod.declaringClass}.$callingMethod not found"))
+                    val code = method.body.getOrElse(throw IllegalArgumentException(s"No body for method ${callingMethod.declaringClass}.$callingMethod"))
+                    val pcAndInstruction = code.iterator.find(instruction => instruction.pc == callSite.pc).getOrElse(throw IllegalArgumentException(s"instruction not found at pc ${callSite.pc}"))
+                    val invokationInstruction = pcAndInstruction.instruction.asInstanceOf[InvocationInstruction]
+                    callSite.addDeclaredTarget(invokationInstruction)
+                } catch {
+                    case exception: Throwable =>
+                        System.err.println(s"Cannot find declared callsite of ${callingMethod.declaringClass}.${callingMethod}:${callSite.pc}: ${exception.getMessage()}")
+                        callSite
+                }
 
             ).toMap
 
