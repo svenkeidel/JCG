@@ -178,10 +178,10 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             val project: Project[URL] = Project(classPath ++ jreJars.toArray, Array.empty[File])
 
             val updatedCallSites = callSites.view.mapValues(callSite =>
-                val callingMethod = methods(callSite.method);
-                val callingClass = toClassType(callingMethod.declaringClass)
+                val callingMethod = methods(callSite.method)
 
                 try {
+                    val callingClass = toClassType(callingMethod.declaringClass)
                     val classFile = project.classFile(callingClass).getOrElse(throw IllegalArgumentException(s"class ${callingMethod.declaringClass} not found"))
                     val returnType = ReturnType(callingMethod.returnType);
                     val parameterTypes = scala.collection.compat.immutable.ArraySeq(callingMethod.parameterTypes.map(FieldType.apply): _*);
