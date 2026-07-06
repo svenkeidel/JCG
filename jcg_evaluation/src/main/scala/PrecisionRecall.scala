@@ -54,17 +54,19 @@ case class PrecisionRecall(
         toEdges(actualCallGraph, withCallSiteLineNumber = false),
         toEdges(predictedCallGraph, withCallSiteLineNumber = false)
     )
-    val edgesFalseNegativeBoundary: Set[Edge] = edges.falseNegative.filter(edge =>
+    val falseNegativeGraph: Map[Method, Set[Edge]] = edges.falseNegative.groupBy(edge => edge.caller)
+    val edgesFalseNegativeBoundary: Map[Edge, TransitiveClosureSize] = edges.falseNegative.filter(edge =>
         predictedCallGraph.contains(edge.caller)
-    )
+    ).map(falseNegativeEdge => falseNegativeEdge -> falseNegativeTransitiveClosure(falseNegativeEdge, falseNegativeGraph)).toMap
 
     val edgesWithCallSiteLineNumbers: Classification[Edge] = Classification[Edge](
         toEdges(actualCallGraph, withCallSiteLineNumber = true),
         toEdges(predictedCallGraph, withCallSiteLineNumber = true)
     )
-    val edgesWithCallSiteLineNumbersFalseNegativeBoundary: Set[Edge] = edgesWithCallSiteLineNumbers.falseNegative.filter(edge =>
+    val falseNegativeCallGraphWithCallSiteLineNumbers = edgesWithCallSiteLineNumbers.falseNegative.groupBy(edge => edge.caller)
+    val edgesWithCallSiteLineNumbersFalseNegativeBoundary: Map[Edge, TransitiveClosureSize] = edgesWithCallSiteLineNumbers.falseNegative.filter(edge =>
         predictedCallGraph.contains(edge.caller)
-    )
+    ).map(falseNegativeEdge => falseNegativeEdge -> falseNegativeTransitiveClosure(falseNegativeEdge, falseNegativeCallGraphWithCallSiteLineNumbers)).toMap
 
     private def toEdges(cg: Map[Method, Set[CallSite]], withCallSiteLineNumber: Boolean): Set[Edge] =
         val result = for {
@@ -75,6 +77,26 @@ case class PrecisionRecall(
             line = if(withCallSiteLineNumber) Some(callSite.line) else None
         } yield(Edge(caller = caller, line = line, declaredTarget = callSite.declaredTarget, target = target))
         result.toSet
+
+    private def falseNegativeTransitiveClosure(falseNegativeStartEdge: Edge, falseNegativeCallGraph: Map[Method, Set[Edge]]): TransitiveClosureSize =
+        val worklist = mutable.Queue(falseNegativeStartEdge)
+        val transitiveClosureEdges = mutable.HashSet[Edge]()
+        val transitiveClosureMethods = mutable.HashSet[Method]()
+        while(worklist.nonEmpty) {
+            val falseNegativeEdge = worklist.removeHead()
+            if(! transitiveClosureEdges.contains(falseNegativeEdge)) {
+                transitiveClosureEdges += falseNegativeEdge
+
+                if(! transitiveClosureMethods.contains(falseNegativeEdge.target) && methods.falseNegative.contains(falseNegativeEdge.target)) {
+                    transitiveClosureMethods += falseNegativeEdge.target
+
+                    worklist ++= falseNegativeCallGraph.getOrElse(falseNegativeEdge.target, Set.empty).diff(transitiveClosureEdges)
+                }
+            }
+        }
+        TransitiveClosureSize(methods = transitiveClosureMethods.size, edges = transitiveClosureEdges.size)
+
+
 
 
 case class Edge(caller: Method, line: Option[Int], declaredTarget: Method, target: Method):
@@ -89,3 +111,6 @@ object Edge {
     implicit val methodReads: Reads[Edge] = Json.reads[Edge]
     implicit val methodWrites: Writes[Edge] = Json.writes[Edge]
 }
+
+case class TransitiveClosureSize(methods: Long, edges: Long):
+    override def toString: String = s"TransitiveClosureSize(methods: $methods, edges: $edges)"
