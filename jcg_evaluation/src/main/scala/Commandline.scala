@@ -51,6 +51,7 @@ object Commandline {
                     case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
                     case Action.PrecisionRecall => computePrecisionRecall(options, callGraphsDirectory, testCase)
                     case Action.JDKCallbacks => computeJDKCallBacks(options, callGraphsDirectory, testCase)
+                    case Action.DynamicCallGraphAddDeclaredTargets => dynamicCallGraphAddDeclaredTargets(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
             }
 
         }
@@ -104,6 +105,17 @@ object Commandline {
             } finally {
                 System.gc()
             }
+        }
+    }
+
+    private def dynamicCallGraphAddDeclaredTargets(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphsDirectory: Path, testCase: String): Unit = {
+        val dynamicCallGraphPath = Util.findCallGraphFile(callGraphsDirectory, testCase)
+        val dynamicCallGraphSerialized = Util.readJSON(dynamicCallGraphPath).validate[DynamicJCGAdapter.CallGraphSerialized].get
+        val classPath = projectSpec.allClassPathEntryPaths(options.projectsDir.toFile).map(Paths.get(_).toFile)
+        val jdkPath = jreLocations(projectSpec.java)
+        val updatedCallGraph = dynamicCallGraphSerialized.addDeclaredTargetsToCallSites(classPath, jdkPath)
+        Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(dynamicCallGraphPath.toFile)))) { writer =>
+            writer.write(Json.prettyPrint(Json.toJson(updatedCallGraph)).getBytes(StandardCharsets.UTF_8))
         }
     }
 
@@ -179,7 +191,7 @@ object Commandline {
                     callSite <- callSites
                     target <- callSite.targets
                     if(options.reachableMethodsInclude.matches(target.declaringClass))
-                } yield Edge(caller, Some(callSite.line), target)
+                } yield Edge(caller = caller, line = Some(callSite.line), target = target, declaredTarget = callSite.declaredTarget)
 
             val outputPath = callGraphDirectory.resolve(s"$testCase-jdk-callbacks.json.gz")
             Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(outputPath.toFile)))) { writer =>

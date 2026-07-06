@@ -11,6 +11,7 @@ enum Action:
     case Size
     case PrecisionRecall
     case JDKCallbacks
+    case DynamicCallGraphAddDeclaredTargets
 
 case class CommandlineOptions(
                                  action:          Action            = Action.Analyze,
@@ -133,6 +134,14 @@ object CommandlineParser {
                     opt[Unit]("analyze-jdk")
                         .action((_,c) => c.copy(analyzeJdk = true))
                 ),
+
+            cmd("dynamic-callgraph-add-declared-targets")
+                .action((_,c) => c.copy(
+                    action = Action.DynamicCallGraphAddDeclaredTargets,
+                    adapters = List(DynamicJCGAdapter),
+                    algorithmFilter = "Dynamic"
+                ))
+                .text("add declared method call targets to dynamic call graph"),
 
             cmd("assess")
                 .action((_,c) => c.copy(action = Action.Assess))

@@ -1,15 +1,19 @@
 import org.apache.commons.io.IOUtils
+import org.opalj.br.{ClassType, FieldAccessMethodHandle, FieldType, FieldTypes, MethodCallMethodHandle, MethodDescriptor, ReturnType}
+import org.opalj.br.analyses.Project
+import org.opalj.br.instructions.*
 
-import java.io.{BufferedInputStream, FileInputStream, Writer}
-import java.nio.file.{Files, Paths}
+import java.io.{BufferedInputStream, File, FileInputStream, Writer}
+import java.nio.file.{Files, Path, Paths}
 import java.util.zip.GZIPInputStream
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
 import scala.jdk.OptionConverters.*
 import scala.util.Using
-import play.api.libs.json.{JsResult, JsValue, Json, Reads, __}
+import play.api.libs.json.{JsResult, JsValue, Json, Reads, Writes, __}
 import play.api.libs.functional.syntax.*
 
+import java.net.URL
 import java.nio.charset.StandardCharsets
 import scala.collection.immutable.ArraySeq
 
@@ -88,7 +92,10 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             println(s"Read call graph from $callGraphPath with ${Files.size(callGraphPath).toDouble / math.pow(10, 6)}MB")
             val callGraphJSON = Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) {
-                input => IOUtils.copy(input, output, StandardCharsets.UTF_8)
+                input =>
+                    val callGraph = Json.parse(input.readAllBytes()).validate[CallGraphSerialized].get
+                    val json = Json.toJson(callGraph.addDeclaredTargetsToCallSites(classPath.map(jar => Paths.get(jar).toFile).toArray, JDKPath))
+                    output.write(Json.prettyPrint(json))
             }
 
             after - before
@@ -97,33 +104,126 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         }
     }
 
-    private case class CallSiteSerialized(method: String, line: Int, pc: Int):
+    case class CallSiteSerialized(method: String, line: Int, pc: Int, declaredTarget: Option[Method]):
         def deserialize(methods: Map[String,Method]): CallSite =
-            CallSite(method = methods(method), line = line, pc = pc)
+            CallSite(method = methods(method), line = line, pc = pc, declaredTarget)
 
-    private case class CallTreeSerialized(callTree: Map[String, CallTreeSerialized]):
+        def addDeclaredTarget(instruction: InvocationInstruction): CallSiteSerialized =
+            instruction match {
+                case invoke: INVOKESTATIC =>
+                    this.copy(declaredTarget =
+                        Some(Method(
+                            declaringClass = invoke.declaringClass.toJVMTypeName,
+                            name = invoke.name,
+                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
+                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
+                        ))
+                    )
+
+                case invoke: INVOKESPECIAL =>
+                    this.copy(declaredTarget =
+                        Some(Method(
+                            declaringClass = invoke.declaringClass.toJVMTypeName,
+                            name = invoke.name,
+                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
+                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
+                        ))
+                    )
+
+                case invoke: INVOKEVIRTUAL =>
+                    this.copy(declaredTarget =
+                        Some(Method(
+                            declaringClass = invoke.declaringClass.toJVMTypeName,
+                            name = invoke.name,
+                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
+                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
+                        ))
+                    )
+
+                case invoke: INVOKEINTERFACE =>
+                    this.copy(declaredTarget =
+                        Some(Method(
+                            declaringClass = invoke.declaringClass.toJVMTypeName,
+                            name = invoke.name,
+                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
+                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
+                        ))
+                    )
+                case invoke: INVOKEDYNAMIC =>
+                    this.copy(declaredTarget =
+                        Some(Method(
+                            declaringClass =
+                                invoke.bootstrapMethod.handle match {
+                                    case handle: MethodCallMethodHandle => handle.receiverType.toJVMTypeName
+                                    case handle: FieldAccessMethodHandle => s"${handle.declaringClassType.toJVMTypeName}.${handle.name}"
+                                },
+                            name = invoke.name,
+                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
+                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
+                        ))
+                    )
+            }
+
+    case class CallTreeSerialized(callTree: Map[String, CallTreeSerialized]):
         def deserialize(callSites: Map[String,CallSite]): CallTree =
             CallTree(callTree.map((callSite,subTree) => (callSites(callSite), subTree.deserialize(callSites))))
 
-    private case class CallGraphSerialized(callTree: CallTreeSerialized, callSites: Map[String,CallSiteSerialized], methods: Map[String,Method]):
+    case class CallGraphSerialized(callTree: CallTreeSerialized, callSites: Map[String,CallSiteSerialized], methods: Map[String,Method]):
         def deserialize: CallTree =
             val deserializedCallSites = callSites.view.mapValues(_.deserialize(methods)).toMap
             callTree.deserialize(deserializedCallSites)
 
+        def addDeclaredTargetsToCallSites(classPath: Array[File], jdkPath: Path): CallGraphSerialized =
+            val jreJars = JRELocation.getAllJREJars(jdkPath).map(_.toFile)
+            val project: Project[URL] = Project(classPath ++ jreJars.toArray, Array.empty[File])
 
-    private implicit val callSiteSerializedReads: Reads[CallSiteSerialized] = Json.reads[CallSiteSerialized]
-    private implicit val callTreeSerializedReads: Reads[CallTreeSerialized] = (json: JsValue) =>
+            val updatedCallSites = callSites.view.mapValues(callSite =>
+                val callingMethod = methods(callSite.method);
+                val callingClass = toClassType(callingMethod.declaringClass)
+
+                val maybeUpdateCallSite = for(
+                    classFile <- project.classFile(callingClass);
+                    returnType = ReturnType(callingMethod.returnType);
+                    parameterTypes = scala.collection.compat.immutable.ArraySeq(callingMethod.parameterTypes.map(FieldType.apply): _*);
+                    md = MethodDescriptor(parameterTypes, returnType);
+                    method <- classFile.findMethod(callingMethod.name, md);
+                    code <- method.body;
+                    pcAndInstruction <- code.iterator.find(instruction => instruction.pc == callSite.pc)
+                ) yield(
+                    pcAndInstruction.instruction match
+                      case invoke: InvocationInstruction => callSite.addDeclaredTarget(invoke)
+                      case _ => callSite
+                )
+
+                maybeUpdateCallSite.getOrElse(callSite)
+
+            ).toMap
+
+            this.copy(callSites = updatedCallSites)
+
+        private def toClassType(jvmRefType: String): ClassType = {
+            assert(jvmRefType.length > 2)
+            ClassType(jvmRefType.substring(1, jvmRefType.length - 1))
+        }
+
+
+    implicit val callSiteSerializedReads: Reads[CallSiteSerialized] = Json.reads[CallSiteSerialized]
+    implicit val callTreeSerializedReads: Reads[CallTreeSerialized] = (json: JsValue) =>
         implicitly[Reads[Map[String, CallTreeSerialized]]].reads(json).map(CallTreeSerialized(_))
-    private implicit val callGraphSerializedReads: Reads[CallGraphSerialized] = Json.reads[CallGraphSerialized]
+    implicit val callGraphSerializedReads: Reads[CallGraphSerialized] = Json.reads[CallGraphSerialized]
 
-    case class CallSite(method: Method, line: Int, pc: Int)
+    implicit val callSiteSerializedWrites: Writes[CallSiteSerialized] = Json.writes[CallSiteSerialized]
+    implicit val callTreeSerializedWrites: Writes[CallTreeSerialized] = (callTree: CallTreeSerialized) => Json.toJson(callTree.callTree)
+    implicit val callGraphSerializedWrites: Writes[CallGraphSerialized] = Json.writes[CallGraphSerialized]
+
+    case class CallSite(method: Method, line: Int, pc: Int, declaredTarget: Option[Method])
     case class CallTree(callSites: Map[CallSite, CallTree]):
         def toReachableMethods: ReachableMethods =
             val reachableMethods = mutable.Map.empty[Method, mutable.Map[CallSite, Set[Method]]]
             addReachableMethods(reachableMethods)
             ReachableMethods(reachableMethods.view.map((method, callSites) =>
                 ReachableMethod(method, callSites.view.map((callSite, targets) =>
-                    new OuterCallSite(declaredTarget = null, line = callSite.line, pc = Some(callSite.pc), targets = targets)
+                    new OuterCallSite(declaredTarget = callSite.declaredTarget.orNull, line = callSite.line, pc = Some(callSite.pc), targets = targets)
                 ).toSet)
             ).toSet)
 

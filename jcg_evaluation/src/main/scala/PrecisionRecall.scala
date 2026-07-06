@@ -73,12 +73,17 @@ case class PrecisionRecall(
             target <- callSite.targets
             if(edgeInclude.matches(s"${caller.declaringClass} -> ${target.declaringClass}"))
             line = if(withCallSiteLineNumber) Some(callSite.line) else None
-        } yield(Edge(caller = caller, line = line, target = target))
+        } yield(Edge(caller = caller, line = line, declaredTarget = callSite.declaredTarget, target = target))
         result.toSet
 
 
-case class Edge(caller: Method, line: Option[Int], target: Method):
-    override def toString: String = s"$caller: ${line.iterator.mkString} -> $target"
+case class Edge(caller: Method, line: Option[Int], declaredTarget: Method, target: Method):
+    override def equals(obj: Any): Boolean =
+        obj match
+            case other: Edge => this.caller == other.caller && this.line == other.line && this.target == other.target
+            case _ => false
+    override def hashCode(): Int = (caller,line,target).hashCode()
+    override def toString: String = s"$caller: ${line.iterator.mkString} [$declaredTarget] -> $target"
 
 object Edge {
     implicit val methodReads: Reads[Edge] = Json.reads[Edge]
