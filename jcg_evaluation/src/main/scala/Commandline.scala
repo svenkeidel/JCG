@@ -263,7 +263,8 @@ object Commandline {
                 if(!(scope == "methods" && metric == "false-negative-boundary"))
                 ) {
 
-                val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.json.gz")
+                val fileType = if(metric.contains("boundary")) "csv" else "json"
+                val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.$fileType.gz")
                 Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
                     writer.write(
                         (scope match {
@@ -272,24 +273,26 @@ object Commandline {
                             case "edges" =>
                                 metric match
                                     case "false-negative-boundary" =>
+                                        s"closure-methods|closure-edges|caller|declared-target|target\n" +
                                         precisionRecall.edgesFalseNegativeBoundary
                                             .view
                                             .map((k,v) => (v,k))
                                             .toArray
                                             .sortBy((closureSize,edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
-                                            .map((closureSize, edge) => s"$closureSize: $edge")
+                                            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}|${edge.declaredTarget}|${edge.target}")
                                             .mkString("\n")
                                     case _ =>
                                         classificationToString(precisionRecall.edges)(metric)
                             case "edges-with-line-numbers" =>
                                 metric match
                                     case "false-negative-boundary" =>
+                                        s"closure-methods|closure-edges|caller|declared-target|target\n" +
                                         precisionRecall.edgesWithCallSiteLineNumbersFalseNegativeBoundary
                                             .view
                                             .map((k,v) => (v,k))
                                             .toArray
                                             .sortBy((closureSize,edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
-                                            .map((closureSize, edge) => s"$closureSize: $edge")
+                                            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}:${edge.line}|${edge.declaredTarget}|${edge.target}")
                                             .mkString("\n")
                                     case _ =>
                                         classificationToString(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
