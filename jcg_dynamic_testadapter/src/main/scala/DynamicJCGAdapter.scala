@@ -108,7 +108,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         def deserialize(methods: Map[String,Method]): CallSite =
             CallSite(method = methods(method), line = line, pc = pc, declaredTarget)
 
-        def addDeclaredTarget(instruction: InvocationInstruction): CallSiteSerialized =
+        def addDeclaredTarget(instruction: Instruction): CallSiteSerialized =
             instruction match {
                 case invoke: INVOKESTATIC =>
                     this.copy(declaredTarget =
@@ -162,6 +162,8 @@ object DynamicJCGAdapter extends JavaTestAdapter {
                             parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
                         ))
                     )
+
+                case _ => throw IllegalArgumentException(s"Expected InvocationInstruction, but got $instruction")
             }
 
     case class CallTreeSerialized(callTree: Map[String, CallTreeSerialized]):
@@ -189,8 +191,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
                     val method = classFile.findMethod(callingMethod.name, md).getOrElse(throw IllegalArgumentException(s"method ${callingMethod.declaringClass}.$callingMethod not found"))
                     val code = method.body.getOrElse(throw IllegalArgumentException(s"No body for method ${callingMethod.declaringClass}.$callingMethod"))
                     val pcAndInstruction = code.iterator.find(instruction => instruction.pc == callSite.pc).getOrElse(throw IllegalArgumentException(s"instruction not found at pc ${callSite.pc}"))
-                    val invokationInstruction = pcAndInstruction.instruction.asInstanceOf[InvocationInstruction]
-                    callSite.addDeclaredTarget(invokationInstruction)
+                    callSite.addDeclaredTarget(pcAndInstruction.instruction)
                 } catch {
                     case exception: Throwable =>
                         System.err.println(s"Cannot find declared callsite of ${callingMethod.declaringClass}.${callingMethod}:${callSite.pc}: ${exception.getMessage()}")
