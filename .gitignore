@@ -26,3 +26,4 @@ local.sbt
 **/build.properties
 /fingerprints
 .*
+/jcg_dynamic_testadapter/src/main/resources/DynamicCG.so

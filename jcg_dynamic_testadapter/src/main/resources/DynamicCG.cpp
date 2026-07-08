@@ -16,26 +16,14 @@ using namespace std::string_view_literals;
 
 static jvmtiEnv *jvmti = NULL;
 static char *call_graph_file_name = NULL;
-static const std::hash<std::string> stringHash = std::hash<std::string>{};
-static const std::hash<int> intHash = std::hash<int>{};
-static const std::hash<long> longHash = std::hash<long>{};
 
 struct Method {
-    jmethodID methodId;
+    const jmethodID method_id;
 
-    Method(jmethodID methodId) {
-        this->methodId = methodId;
+    Method(jmethodID method_id): method_id(method_id) {
     }
 
-    bool operator==(const Method &o) const {
-        return methodId == o.methodId;
-    }
-
-    bool operator<(const Method &o) const {
-        return reinterpret_cast<size_t>(methodId) < reinterpret_cast<size_t>(o.methodId);
-    }
-
-    void toJson(jvmtiEnv *jvmti, boost::iostreams::filtering_ostream& out) const {
+    void to_json(jvmtiEnv *jvmti, boost::iostreams::filtering_ostream& out) const {
 
         std::string name;
         std::string declaringClass;
@@ -44,7 +32,7 @@ struct Method {
 
         jclass cls;
         int err;
-        if ((err = jvmti->GetMethodDeclaringClass(methodId, &cls)) != JVMTI_ERROR_NONE)
+        if ((err = jvmti->GetMethodDeclaringClass(method_id, &cls)) != JVMTI_ERROR_NONE)
             throw std::runtime_error("cannot get declaring class: error "+std::to_string(err));
 
         char* className;
@@ -56,7 +44,7 @@ struct Method {
 
         char *methodName;
         char *sig;
-        jvmti->GetMethodName(methodId, &methodName, &sig, NULL);
+        jvmti->GetMethodName(method_id, &methodName, &sig, NULL);
         name = std::string(methodName);
         std::string signature = std::string(sig);
         jvmti->Deallocate((unsigned char*) methodName);
@@ -100,36 +88,35 @@ struct Method {
     }
 };
 
-namespace std {
-    template<>
-    struct hash<Method> {
-        size_t operator()(const Method& method) const noexcept {
-            return reinterpret_cast<size_t>(method.methodId);
-        }
-    };
-}
+struct method_hash {
+    size_t operator()(const Method& method) const noexcept {
+        return reinterpret_cast<size_t>(method.method_id);
+    }
+};
 
-std::unordered_set<Method> methodPool;
+struct method_equals {
+    bool operator()(const Method& lhs, const Method& rhs) const {
+        return lhs.method_id == rhs.method_id;
+    }
+};
 
-struct CallSite {
+std::unordered_set<Method, method_hash, method_equals> method_pool;
+
+struct Call_Site {
     const Method* method;
     const jlocation location;
 
-    CallSite(jmethodID m, jlocation location)
-        : method(&(*methodPool.insert(Method(m)).first)),
+    Call_Site(jmethodID m, jlocation location)
+        : method(&(*method_pool.insert(Method(m)).first)),
           location(location)
     {
     }
 
-    bool operator==(const CallSite &other) const noexcept {
-        return location == other.location && method == other.method;
-    }
-
-    void toJson(jvmtiEnv *jvmti, boost::iostreams::filtering_ostream& out) const {
+    void to_json(jvmtiEnv *jvmti, boost::iostreams::filtering_ostream& out) const {
         jint lntEntries;
         jint lineNumber;
         jvmtiLineNumberEntry* lineNumbers = NULL;
-        if (jvmti->GetLineNumberTable(method->methodId, &lntEntries, &lineNumbers) == JVMTI_ERROR_NONE) {
+        if (jvmti->GetLineNumberTable(method->method_id, &lntEntries, &lineNumbers) == JVMTI_ERROR_NONE) {
             lineNumber = lineNumbers[0].line_number;
             for (int i = 1; i < lntEntries; i++) {
                 if (location < lineNumbers[i].start_location) {
@@ -152,55 +139,56 @@ struct CallSite {
     }
 };
 
-namespace std {
-    template<>
-    struct hash<CallSite> {
-        size_t operator()(const CallSite& callSite) const noexcept {
-            size_t seed = reinterpret_cast<size_t>(callSite.method);
-            seed ^= callSite.location + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+struct Call_Site_Hash {
+    size_t operator()(const Call_Site& callSite) const noexcept {
+        size_t seed = reinterpret_cast<size_t>(callSite.method);
+        seed ^= callSite.location + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        return seed;
+    }
+};
 
-            return seed;
-        }
-    };
+struct Call_Site_Equals {
+    bool operator()(const Call_Site& lhs, const Call_Site& rhs) const {
+        return lhs.location == rhs.location;
+    }
+};
 
-}
-
-struct CallSitePointerHash {
-    size_t operator()(const CallSite* callSite) const noexcept {
+struct Call_Site_Pointer_Hash {
+    size_t operator()(const Call_Site* callSite) const noexcept {
         return reinterpret_cast<size_t>(callSite);
     }
 };
 
-struct CallSitePointerEquals {
-    bool operator()(const CallSite* lhs, const CallSite* rhs) const {
+struct Call_Site_Pointer_Equals {
+    bool operator()(const Call_Site* lhs, const Call_Site* rhs) const {
         return lhs == rhs;
     }
 };
 
-std::unordered_set<CallSite> callSitePool;
+std::unordered_set<Call_Site, Call_Site_Hash, Call_Site_Equals> call_site_pool;
 
-struct CallTree {
-    std::unordered_map<const CallSite*, std::unique_ptr<CallTree>, CallSitePointerHash, CallSitePointerEquals> children;
+struct Call_Tree {
+    std::unordered_map<const Call_Site*, std::unique_ptr<Call_Tree>, Call_Site_Pointer_Hash, Call_Site_Pointer_Equals> children;
 
-    CallTree() {
+    Call_Tree() {
         children.reserve(1);
     }
 
-    void addStackTrace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
+    void add_stack_trace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
         if(stack_size > 0) {
-            auto [it, _inserted] = callSitePool.insert(CallSite (stack_frames[stack_size - 1].method, stack_frames[stack_size - 1].location ));
+            auto [it, _inserted] = call_site_pool.insert(Call_Site (stack_frames[stack_size - 1].method, stack_frames[stack_size - 1].location ));
 
-            const CallSite* topmost = &(*it);
+            const Call_Site* topmost = &(*it);
 
             if(! children.contains(topmost)) {
-                children.emplace(topmost, std::make_unique<CallTree>());
+                children.emplace(topmost, std::make_unique<Call_Tree>());
             }
 
-            children[topmost]->addStackTrace(jvmti, stack_frames, stack_size - 1);
+            children[topmost]->add_stack_trace(jvmti, stack_frames, stack_size - 1);
         }
     }
 
-    void toJson(jvmtiEnv *_jvmti, boost::iostreams::filtering_ostream& out) const {
+    void to_json(jvmtiEnv *_jvmti, boost::iostreams::filtering_ostream& out) const {
         out << "{"sv;
 
         bool first = true;
@@ -211,7 +199,7 @@ struct CallTree {
             }
 
             out << "\""sv << callSite << "\": "sv;
-            subTree->toJson(jvmti, out);
+            subTree->to_json(jvmti, out);
 
             first = false;
         }
@@ -227,69 +215,43 @@ struct CallTree {
         return s;
     }
 
-    unsigned int bucketSum() const {
+    unsigned int bucket_sum() const {
         unsigned int sum = children.bucket_count();
         for (const auto& [callSite, subTree] : children) {
-            sum += subTree->bucketSum();
+            sum += subTree->bucket_sum();
         }
         return sum;
     }
 };
-static CallTree callTree;
+static Call_Tree call_tree;
 
-
-static std::mutex methodEntryMutex;
-
-bool isSuffixOf(jvmtiFrameInfo* stackA, jint sizeA, jvmtiFrameInfo* stackB, jint sizeB) {
-    if (sizeA > sizeB)
-        return false;
-
-    // Stacks are ordered in reverse, i.e., the main method is always the last method on the stack.
-    // This means we need to compare stacks from the end to the front.
-    for (int i = 0; i < sizeA; i++) {
-        int frameA = i;
-        int frameB = (sizeB - sizeA) + i;
-        if (stackA[frameA].method != stackB[frameB].method || stackA[frameA].location != stackB[frameB].location)
-            return false;
-    }
-
-    return true;
-}
-
-static unsigned long long methodCalls = 0;
-static unsigned long long suffixes = 0;
+static std::mutex method_entry_mutex;
+static unsigned long long method_calls = 0;
 static const jint max_stack_depth = 10000;
-static jvmtiFrameInfo stack_traces[2][max_stack_depth];
-static jint stack_sizes[2];
+static jvmtiFrameInfo stack_trace[max_stack_depth];
+static jint stack_size;
 
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
 
-    std::lock_guard<std::mutex> lock(methodEntryMutex);
+    std::lock_guard<std::mutex> lock(method_entry_mutex);
 
-    if (methodCalls % 1000000 == 0) {
-        std::cout << "method calls = "sv << methodCalls << ", suffixes = "sv << suffixes << ", "sv
-                  << "callTree.size = "sv << callTree.size() << ", callTree.bucketSum = " << callTree.bucketSum() << ", "sv
-                  << "callSitePool.size = "sv << callSitePool.size() << ", "sv
-                  << "methodPool.size = "sv << methodPool.size() << "\n"sv;
+    if (method_calls % 1000000 == 0) {
+        std::cout << "method calls = "sv << method_calls << ", "sv
+                  << "callTree.size = "sv << call_tree.size() << ", callTree.bucketSum = " << call_tree.bucket_sum() << ", "sv
+                  << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
+                  << "methodPool.size = "sv << method_pool.size() << "\n"sv;
         std::cout.flush();
     }
 
     static const jint start_depth = 0;
 
-    unsigned int currentStackTrace = methodCalls % 2;
-    unsigned int previousStackTrace = (methodCalls - 1) % 2;
-
     jvmtiError err;
-    if ((err = jvmti->GetStackTrace(thread, start_depth, max_stack_depth, stack_traces[currentStackTrace], &stack_sizes[currentStackTrace])) != JVMTI_ERROR_NONE)
+    if ((err = jvmti->GetStackTrace(thread, start_depth, max_stack_depth, stack_trace, &stack_size)) != JVMTI_ERROR_NONE)
         throw std::runtime_error("cannot get stack trace: error "+std::to_string(err));
 
-    if (methodCalls != 0 && !isSuffixOf(stack_traces[previousStackTrace], stack_sizes[previousStackTrace], stack_traces[currentStackTrace], stack_sizes[currentStackTrace])) {
-        callTree.addStackTrace(jvmti, stack_traces[previousStackTrace], stack_sizes[previousStackTrace]);
-    } else {
-        suffixes += 1;
-    }
+    call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
 
-    methodCalls += 1;
+    method_calls += 1;
 }
 
 void return_cg(jvmtiEnv *jvmti) {
@@ -311,7 +273,7 @@ void return_cg(jvmtiEnv *jvmti) {
         std::cout << "Write call tree ...\n" << std::flush;
 
         out << "\"callTree\": "sv;
-        callTree.toJson(jvmti, out);
+        call_tree.to_json(jvmti, out);
 
         boost::iostreams::flush(out);
 
@@ -321,11 +283,11 @@ void return_cg(jvmtiEnv *jvmti) {
 
         out << ", \"callSites\": {"sv;
         bool first = true;
-        for (const auto& callSite : callSitePool) {
+        for (const auto& callSite : call_site_pool) {
             if (!first) out << ",\n"sv;
 
             out << "\""sv << std::addressof(callSite) << "\": "sv;
-            callSite.toJson(jvmti, out);
+            callSite.to_json(jvmti, out);
 
             first = false;
         }
@@ -339,11 +301,11 @@ void return_cg(jvmtiEnv *jvmti) {
 
         out << ", \"methods\": {"sv;
         first = true;
-        for (const auto& method : methodPool) {
+        for (const auto& method : method_pool) {
             if (!first) out << ",\n"sv;
 
             out << "\""sv << std::addressof(method) << "\": "sv;
-            method.toJson(jvmti, out);
+            method.to_json(jvmti, out);
 
             first = false;
         }
@@ -361,11 +323,6 @@ void return_cg(jvmtiEnv *jvmti) {
 }
 
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti, JNIEnv* jni_env) {
-
-    // Ensure that all remaining stack traces are added to the call tree.
-    callTree.addStackTrace(jvmti, stack_traces[0], stack_sizes[0]);
-    callTree.addStackTrace(jvmti, stack_traces[1], stack_sizes[1]);
-
     return_cg(jvmti);
 }
 
