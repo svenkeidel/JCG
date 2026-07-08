@@ -259,7 +259,7 @@ object Commandline {
             )
 
             for(scope <- List("methods", "edges", "edges-with-line-numbers");
-                metric <- List("true-positives", "false-positives", "false-negatives", "false-negative-boundary")
+                metric <- List("true-positives", "false-positives", "false-negatives", "false-positive-boundary", "false-negative-boundary")
                 if(!(scope == "methods" && metric == "false-negative-boundary"))
                 ) {
 
@@ -272,30 +272,14 @@ object Commandline {
                                 classificationToString(precisionRecall.methods)(metric)
                             case "edges" =>
                                 metric match
-                                    case "false-negative-boundary" =>
-                                        s"closure-methods|closure-edges|caller|declared-target|target\n" +
-                                        precisionRecall.edgesFalseNegativeBoundary
-                                            .view
-                                            .map((k,v) => (v,k))
-                                            .toArray
-                                            .sortBy((closureSize,edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
-                                            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}|${edge.declaredTarget}|${edge.target}")
-                                            .mkString("\n")
-                                    case _ =>
-                                        classificationToString(precisionRecall.edges)(metric)
+                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edges.falsePositiveBoundary)
+                                    case "false-negative-boundary" => boundaryToCSV(precisionRecall.edges.falseNegativeBoundary)
+                                    case _                         => classificationToString(precisionRecall.edges)(metric)
                             case "edges-with-line-numbers" =>
                                 metric match
-                                    case "false-negative-boundary" =>
-                                        s"closure-methods|closure-edges|caller|declared-target|target\n" +
-                                        precisionRecall.edgesWithCallSiteLineNumbersFalseNegativeBoundary
-                                            .view
-                                            .map((k,v) => (v,k))
-                                            .toArray
-                                            .sortBy((closureSize,edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
-                                            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}:${edge.line}|${edge.declaredTarget}|${edge.target}")
-                                            .mkString("\n")
-                                    case _ =>
-                                        classificationToString(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
+                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary)
+                                    case "false-negative-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falseNegativeBoundary)
+                                    case _                         => classificationToString(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
                         }).getBytes(StandardCharsets.UTF_8)
                     )
                 }
@@ -312,6 +296,16 @@ object Commandline {
         case "false-positives" => classification.falsePositive.mkString("\n")
         case "false-negatives" => classification.falseNegative.mkString("\n")
     }
+
+    private def boundaryToCSV(boundary: Map[Edge, TransitiveClosureSize]): String =
+        s"closure-methods|closure-edges|caller|declared-target|target\n" +
+            boundary
+                .view
+                .map((k, v) => (v, k))
+                .toArray
+                .sortBy((closureSize, edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
+                .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}${edge.line.map(line => ":" + line).getOrElse("")}|${edge.declaredTarget}|${edge.target}")
+                .mkString("\n")
 
     private def toJson[T : Writes](classification: Classification[T]): String => JsValue = {
         case "true-positives"  => Json.toJson(classification.truePositive)

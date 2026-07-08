@@ -61,6 +61,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             var args = List(javaPath.toAbsolutePath.toString)
             args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
+            args :+= s"-XX:-ClassUnloading" // It is important to disable class unloading, such that method ids remain valid.
             args ++= jvmArgs
             args :+= s"-agentpath:${agentPath.toAbsolutePath}=$agentArgs"
             args ++= List("-cp", classPath.mkString(":"))
