@@ -39,12 +39,12 @@ class Classification[X](
     }
 
 case class EdgeClassification(actualPositive: Set[Edge], predictedPositive: Set[Edge], methods: Classification[Method]) extends Classification[Edge](actualPositive, predictedPositive):
-    val falsePositiveGraph: Map[Method, Set[Edge]] = falsePositive.groupBy(edge => edge.caller)
+//    val falsePositiveGraph: Map[Method, Set[Edge]] = falsePositive.groupBy(edge => edge.caller)
     val falseNegativeGraph: Map[Method, Set[Edge]] = falseNegative.groupBy(edge => edge.caller)
 
-    val falsePositiveBoundary: Map[Edge, TransitiveClosureSize] = falsePositive.filter(edge =>
-        methods.truePositive.contains(edge.caller)
-    ).map(falsePositiveEdge => falsePositiveEdge -> transitiveClosure(falsePositiveEdge, falsePositiveGraph, methods.falsePositive)).toMap
+//    val falsePositiveBoundary: Map[Edge, TransitiveClosureSize] = falsePositive.filter(edge =>
+//        methods.truePositive.contains(edge.caller)
+//    ).map(falsePositiveEdge => falsePositiveEdge -> transitiveClosure(falsePositiveEdge, falsePositiveGraph, methods.falsePositive)).toMap
 
     val falseNegativeBoundary: Map[Edge, TransitiveClosureSize] = falseNegative.filter(edge =>
         methods.truePositive.contains(edge.caller)

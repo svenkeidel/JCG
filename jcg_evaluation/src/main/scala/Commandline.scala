@@ -272,12 +272,12 @@ object Commandline {
                                 classificationToString(precisionRecall.methods)(metric)
                             case "edges" =>
                                 metric match
-                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edges.falsePositiveBoundary)
+//                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edges.falsePositiveBoundary)
                                     case "false-negative-boundary" => boundaryToCSV(precisionRecall.edges.falseNegativeBoundary)
                                     case _                         => classificationToString(precisionRecall.edges)(metric)
                             case "edges-with-line-numbers" =>
                                 metric match
-                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary)
+//                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary)
                                     case "false-negative-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falseNegativeBoundary)
                                     case _                         => classificationToString(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
                         }).getBytes(StandardCharsets.UTF_8)
