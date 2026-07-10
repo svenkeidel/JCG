@@ -234,23 +234,29 @@ static jint stack_size;
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
 
     std::lock_guard<std::mutex> lock(method_entry_mutex);
+    try {
+        if (method_calls % 1000000 == 0) {
+            std::cout << "method calls = "sv << method_calls << ", "sv
+                      << "callTree.size = "sv << call_tree.size() << ", callTree.bucketSum = " << call_tree.bucket_sum() << ", "sv
+                      << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
+                      << "methodPool.size = "sv << method_pool.size() << "\n"sv;
+            std::cout.flush();
+        }
+        method_calls += 1;
 
-    if (method_calls % 1000000 == 0) {
-        std::cout << "method calls = "sv << method_calls << ", "sv
-                  << "callTree.size = "sv << call_tree.size() << ", callTree.bucketSum = " << call_tree.bucket_sum() << ", "sv
-                  << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
-                  << "methodPool.size = "sv << method_pool.size() << "\n"sv;
-        std::cout.flush();
-    }
-    method_calls += 1;
+        static const jint start_depth = 0;
 
-    static const jint start_depth = 0;
+        jvmtiError err;
+        if ((err = jvmti->GetStackTrace(thread, start_depth, max_stack_depth, stack_trace, &stack_size)) != JVMTI_ERROR_NONE) {
+            throw std::runtime_error("cannot get stacktrace.");
+        }
 
-    jvmtiError err;
-    if ((err = jvmti->GetStackTrace(thread, start_depth, max_stack_depth, stack_trace, &stack_size)) != JVMTI_ERROR_NONE) {
-        std::cerr << "JVMTI Agent: cannot get stacktrace. error code: "sv << err << "\n"sv;
-    } else {
         call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
+
+    } catch (const std::runtime_error& e) {
+        std::cout << "JVMTI Agent: Caught runtime error: " << e.what() << '\n';
+    } catch (...) {
+        std::cerr << "JVMTI Agent: unknown exception\n";
     }
 
 }
