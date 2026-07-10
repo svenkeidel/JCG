@@ -93,10 +93,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             println(s"Read call graph from $callGraphPath with ${Files.size(callGraphPath).toDouble / math.pow(10, 6)}MB")
             val callGraphJSON = Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) {
-                input =>
-                    val callGraph = Json.parse(input.readAllBytes()).validate[CallGraphSerialized].get
-                    val json = Json.toJson(callGraph.addDeclaredTargetsToCallSites(classPath.map(jar => Paths.get(jar).toFile).toArray, JDKPath))
-                    output.write(Json.prettyPrint(json))
+                input => IOUtils.copy(input, output, StandardCharsets.UTF_8)
             }
 
             after - before
