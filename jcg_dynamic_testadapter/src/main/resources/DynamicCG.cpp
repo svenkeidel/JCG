@@ -227,7 +227,7 @@ static Call_Tree call_tree;
 
 static std::mutex method_entry_mutex;
 static unsigned long long method_calls = 0;
-static const jint max_stack_depth = 10000;
+static const jint max_stack_depth = 1000000;
 static jvmtiFrameInfo stack_trace[max_stack_depth];
 static jint stack_size;
 
@@ -242,16 +242,17 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
                   << "methodPool.size = "sv << method_pool.size() << "\n"sv;
         std::cout.flush();
     }
+    method_calls += 1;
 
     static const jint start_depth = 0;
 
     jvmtiError err;
-    if ((err = jvmti->GetStackTrace(thread, start_depth, max_stack_depth, stack_trace, &stack_size)) != JVMTI_ERROR_NONE)
-        throw std::runtime_error("cannot get stack trace: error "+std::to_string(err));
+    if ((err = jvmti->GetStackTrace(thread, start_depth, max_stack_depth, stack_trace, &stack_size)) != JVMTI_ERROR_NONE) {
+        std::cerr << "JVMTI Agent: cannot get stacktrace. error code: "sv << err << "\n"sv;
+    } else {
+        call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
+    }
 
-    call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
-
-    method_calls += 1;
 }
 
 void return_cg(jvmtiEnv *jvmti) {
