@@ -1,3 +1,5 @@
+import com.fasterxml.jackson.core.StreamReadConstraints
+
 import java.io.{BufferedInputStream, File, FileInputStream}
 import java.nio.file.*
 import java.util.zip.GZIPInputStream
@@ -6,6 +8,12 @@ import play.api.libs.json.{JsValue, Json}
 import scala.util.Using
 
 object Util {
+
+    StreamReadConstraints.overrideDefaultStreamReadConstraints(
+        StreamReadConstraints.builder()
+            .maxNestingDepth(10000)
+            .build()
+    )
 
     def getProjectsDir(projectsDir: File): File = {
         assert(projectsDir.exists(), s"${projectsDir.getPath} does not exists")
