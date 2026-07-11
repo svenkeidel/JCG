@@ -1,8 +1,7 @@
 import java.io.*
 import java.nio.file.*
-import java.util.zip.{GZIPInputStream, GZIPOutputStream}
+import java.util.zip.{GZIPOutputStream}
 import play.api.libs.json.{JsValue, Json, Writes}
-import org.opalj.br.MethodDescriptor
 
 import java.nio.charset.StandardCharsets
 import scala.io.Source
@@ -115,7 +114,7 @@ object Commandline {
         val jdkPath = jreLocations(projectSpec.java)
         val updatedCallGraph = dynamicCallGraphSerialized.addDeclaredTargetsToCallSites(classPath, jdkPath)
         Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(dynamicCallGraphPath.toFile)))) { writer =>
-            writer.write(Json.prettyPrint(Json.toJson(updatedCallGraph)).getBytes(StandardCharsets.UTF_8))
+            Util.writeJson(writer, Json.toJson(updatedCallGraph))
         }
     }
 

@@ -1,9 +1,9 @@
-import com.fasterxml.jackson.core.StreamReadConstraints
+import com.fasterxml.jackson.core.{JsonFactory, StreamReadConstraints}
 
-import java.io.{BufferedInputStream, File, FileInputStream}
+import java.io.{BufferedInputStream, File, FileInputStream, OutputStream, Writer}
 import java.nio.file.*
 import java.util.zip.GZIPInputStream
-import play.api.libs.json.{JsValue, Json}
+import play.api.libs.json.*
 
 import scala.util.Using
 
@@ -76,5 +76,28 @@ object Util {
     def readDynamicCallGraph(callGraphPath: Path): DynamicJCGAdapter.CallTree = {
         val json = readJSON(callGraphPath)
         json.validate[DynamicJCGAdapter.CallTree].get
+    }
+
+    def writeJson(outputStream: OutputStream, json: JsValue): Unit = {
+        Using(new JsonFactory().createGenerator(outputStream)) { generator =>
+            def writeNode(value: JsValue): Unit = value match {
+                case JsNull => generator.writeNull()
+                case JsBoolean(b) => generator.writeBoolean(b)
+                case JsNumber(n) => generator.writeNumber(n.bigDecimal)
+                case JsString(s) => generator.writeString(s)
+                case JsArray(elements) =>
+                    generator.writeStartArray()
+                    elements.foreach(writeNode)
+                    generator.writeEndArray()
+                case JsObject(fields) =>
+                    generator.writeStartObject()
+                    fields.foreach { case (key, v) =>
+                        generator.writeFieldName(key)
+                        writeNode(v)
+                    }
+                    generator.writeEndObject()
+            }
+            writeNode(json)
+        }
     }
 }
