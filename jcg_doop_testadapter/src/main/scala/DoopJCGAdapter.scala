@@ -203,8 +203,8 @@ object DoopAdapter extends JavaTestAdapter {
 
             var args = Array(
                 "./bin/doop",
-                "--analysis", "context-insensitive",
-                "--reflection",
+                "--analysis", algorithmToDoopAnalysis(algorithm),
+//                "--reflection",
                 "--timeout", "1440",
                 "--platform", s"java_$javaVersion",
                 "--use-local-java-platform", JDKPath.toAbsolutePath.toString,
