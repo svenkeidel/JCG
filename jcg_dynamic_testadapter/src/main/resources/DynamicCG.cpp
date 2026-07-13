@@ -303,10 +303,14 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
             std::cout << "method calls = "sv << method_calls << ", "sv
                       << "callTree.size = "sv << call_tree.size() << ", callTree.bucketSum = " << call_tree.bucket_sum() << ", "sv
                       << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
-                      << "methodPool.size = "sv << method_pool.size() << "\n"sv;
-            std::cout.flush();
-            if (method_calls % 10000000 == 0)
+                      << "methodPool.size = "sv << method_pool.size();
+            if (method_calls % 10000000 == 0) {
+                std::cout << ", serialize callgraph\n"sv;
                 write_cg_to_file(jvmti);
+            } else {
+                std::cout << "\n"sv;
+            }
+            std::cout.flush();
         }
         method_calls += 1;
 
