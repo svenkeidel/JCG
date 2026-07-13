@@ -92,9 +92,9 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             val after = System.nanoTime
 
             println(s"Read call graph from $callGraphPath with ${Files.size(callGraphPath).toDouble / math.pow(10, 6)}MB")
-            val callGraphJSON = Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) {
+            Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) {
                 input => IOUtils.copy(input, output, StandardCharsets.UTF_8)
-            }
+            }.get
 
             after - before
         } finally {

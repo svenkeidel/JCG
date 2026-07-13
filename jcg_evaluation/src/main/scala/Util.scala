@@ -1,16 +1,22 @@
-import com.fasterxml.jackson.core.{JsonFactory, StreamReadConstraints}
+import com.fasterxml.jackson.core.{JsonFactory, StreamReadConstraints, StreamWriteConstraints}
 
 import java.io.{BufferedInputStream, File, FileInputStream, OutputStream, Writer}
 import java.nio.file.*
 import java.util.zip.GZIPInputStream
 import play.api.libs.json.*
 
-import scala.util.Using
+import scala.util.{Try, Using}
 
 object Util {
 
     StreamReadConstraints.overrideDefaultStreamReadConstraints(
         StreamReadConstraints.builder()
+            .maxNestingDepth(10000)
+            .build()
+    )
+
+    StreamWriteConstraints.overrideDefaultStreamWriteConstraints(
+        StreamWriteConstraints.builder()
             .maxNestingDepth(10000)
             .build()
     )
@@ -78,7 +84,7 @@ object Util {
         json.validate[DynamicJCGAdapter.CallTree].get
     }
 
-    def writeJson(outputStream: OutputStream, json: JsValue): Unit = {
+    def writeJson(outputStream: OutputStream, json: JsValue): Try[Unit] = {
         Using(new JsonFactory().createGenerator(outputStream)) { generator =>
             def writeNode(value: JsValue): Unit = value match {
                 case JsNull => generator.writeNull()
