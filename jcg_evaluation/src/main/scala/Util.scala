@@ -84,7 +84,7 @@ object Util {
         json.validate[DynamicJCGAdapter.CallTree].get
     }
 
-    def writeJson(outputStream: OutputStream, json: JsValue): Try[Unit] = {
+    def writeJson(outputStream: OutputStream, json: JsValue): Unit = {
         Using(new JsonFactory().createGenerator(outputStream)) { generator =>
             def writeNode(value: JsValue): Unit = value match {
                 case JsNull => generator.writeNull()
@@ -104,6 +104,6 @@ object Util {
                     generator.writeEndObject()
             }
             writeNode(json)
-        }
+        }.get
     }
 }

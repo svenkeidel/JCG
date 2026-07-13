@@ -234,6 +234,67 @@ static const jint max_stack_depth = 1000000;
 static jvmtiFrameInfo stack_trace[max_stack_depth];
 static jint stack_size;
 
+void write_cg_to_file(jvmtiEnv *jvmti) {
+    // Create an ordinary output file stream in binary mode
+    std::ofstream call_graph_file(call_graph_file_name, std::ios::binary);
+
+    // Create a filtering stream and push the Gzip compressor
+    boost::iostreams::filtering_ostream out;
+
+    std::streamsize buffer_size = 64 * 1024;
+    boost::iostreams::gzip_params params;
+    params.level = boost::iostreams::gzip::default_compression;
+    out.push(boost::iostreams::gzip_compressor(params, buffer_size));
+    out.push(call_graph_file); // Pipe the compressed data directly to your file
+
+    out << "{"sv;
+
+    {
+        // std::cout << "Write call tree ...\n" << std::flush;
+
+        out << "\"callTree\": "sv;
+        call_tree.to_json(jvmti, out);
+
+        boost::iostreams::flush(out);
+
+        // std::cout << "Write call-sites ...\n" << std::flush;
+
+        out << ", \"callSites\": {"sv;
+        bool first = true;
+        for (const auto& callSite : call_site_pool) {
+            if (!first) out << ",\n"sv;
+
+            out << "\""sv << std::addressof(callSite) << "\": "sv;
+            callSite.to_json(jvmti, out);
+
+            first = false;
+        }
+        out << "}"sv;
+
+        boost::iostreams::flush(out);
+
+        // out << ", \"methods\": {"sv;
+        first = true;
+        for (const auto& method : method_pool) {
+            if (!first) out << ",\n"sv;
+
+            out << "\""sv << std::addressof(method) << "\": "sv;
+            method.to_json(jvmti, out);
+
+            first = false;
+        }
+        out << "}"sv;
+
+        boost::iostreams::flush(out);
+    }
+
+    out << "}"sv;
+
+    boost::iostreams::close(out);
+
+    // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
+}
+
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
 
     std::lock_guard<std::mutex> lock(method_entry_mutex);
@@ -244,6 +305,8 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
                       << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
                       << "methodPool.size = "sv << method_pool.size() << "\n"sv;
             std::cout.flush();
+            if (method_calls % 10000000 == 0)
+                write_cg_to_file(jvmti);
         }
         method_calls += 1;
 
@@ -264,76 +327,8 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
 
 }
 
-void return_cg(jvmtiEnv *jvmti) {
-    // Create an ordinary output file stream in binary mode
-    std::ofstream call_graph_file(call_graph_file_name, std::ios::binary);
-
-    // Create a filtering stream and push the Gzip compressor
-    boost::iostreams::filtering_ostream out;
-
-    std::streamsize buffer_size = 64 * 1024;
-    boost::iostreams::gzip_params params;
-    params.level = boost::iostreams::gzip::default_compression;
-    out.push(boost::iostreams::gzip_compressor(params, buffer_size));
-    out.push(call_graph_file); // Pipe the compressed data directly to your file
-
-    out << "{"sv;
-
-    {
-        std::cout << "Write call tree ...\n" << std::flush;
-
-        out << "\"callTree\": "sv;
-        call_tree.to_json(jvmti, out);
-
-        boost::iostreams::flush(out);
-
-        // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
-
-        std::cout << "Write call-sites ...\n" << std::flush;
-
-        out << ", \"callSites\": {"sv;
-        bool first = true;
-        for (const auto& callSite : call_site_pool) {
-            if (!first) out << ",\n"sv;
-
-            out << "\""sv << std::addressof(callSite) << "\": "sv;
-            callSite.to_json(jvmti, out);
-
-            first = false;
-        }
-        out << "}"sv;
-
-        boost::iostreams::flush(out);
-
-        // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
-
-        std::cout << "Write methods ...\n" << std::flush;
-
-        out << ", \"methods\": {"sv;
-        first = true;
-        for (const auto& method : method_pool) {
-            if (!first) out << ",\n"sv;
-
-            out << "\""sv << std::addressof(method) << "\": "sv;
-            method.to_json(jvmti, out);
-
-            first = false;
-        }
-        out << "}"sv;
-
-        boost::iostreams::flush(out);
-        // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
-    }
-
-    out << "}"sv;
-
-    boost::iostreams::close(out);
-
-    // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
-}
-
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti, JNIEnv* jni_env) {
-    return_cg(jvmti);
+    write_cg_to_file(jvmti);
 }
 
 JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {

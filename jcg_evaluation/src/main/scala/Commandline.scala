@@ -115,7 +115,7 @@ object Commandline {
         val updatedCallGraph = dynamicCallGraphSerialized.addDeclaredTargetsToCallSites(classPath, jdkPath)
         Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(dynamicCallGraphPath.toFile)))) { writer =>
             Util.writeJson(writer, Json.toJson(updatedCallGraph))
-        }.get.get
+        }.get
     }
 
     private def assessCallGraph(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
