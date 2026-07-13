@@ -95,12 +95,12 @@ case class PrecisionRecall(
         predictedCallGraph.keySet.filter(method => reachableMethodsInclude.matches(method.declaringClass))
     )
 
-//    val edges: EdgeClassification = EdgeClassification(
-//        toEdges(actualCallGraph, withCallSiteLineNumber = false),
-//        toEdges(predictedCallGraph, withCallSiteLineNumber = false),
-//        methods,
-//        computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
-//    )
+    val edges: EdgeClassification = EdgeClassification(
+        toEdges(actualCallGraph, withCallSiteLineNumber = false),
+        toEdges(predictedCallGraph, withCallSiteLineNumber = false),
+        methods,
+        computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
+    )
 
     val edgesWithCallSiteLineNumbers: EdgeClassification = EdgeClassification(
         toEdges(actualCallGraph, withCallSiteLineNumber = true),

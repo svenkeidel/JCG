@@ -237,15 +237,15 @@ object Commandline {
                                 "false_positive" -> precisionRecall.methods.falsePositive.size,
                                 "false_negative" -> precisionRecall.methods.falseNegative.size,
                             ),
-//                        "edges" ->
-//                            Json.obj(
-//                                "precision" -> precisionRecall.edges.precision,
-//                                "recall" -> precisionRecall.edges.recall,
-//                                "f1-score" -> precisionRecall.edges.f1Score,
-//                                "true_positive" -> precisionRecall.edges.truePositive.size,
-//                                "false_positive" -> precisionRecall.edges.falsePositive.size,
-//                                "false_negative" -> precisionRecall.edges.falseNegative.size
-//                            ),
+                        "edges" ->
+                            Json.obj(
+                                "precision" -> precisionRecall.edges.precision,
+                                "recall" -> precisionRecall.edges.recall,
+                                "f1-score" -> precisionRecall.edges.f1Score,
+                                "true_positive" -> precisionRecall.edges.truePositive.size,
+                                "false_positive" -> precisionRecall.edges.falsePositive.size,
+                                "false_negative" -> precisionRecall.edges.falseNegative.size
+                            ),
                         "edges-with-callsite-line-numbers" ->
                             Json.obj(
                                 "precision" -> precisionRecall.edgesWithCallSiteLineNumbers.precision,
@@ -259,7 +259,7 @@ object Commandline {
                 ).getBytes(StandardCharsets.UTF_8)
             )
 
-            for(scope <- List("methods", "edges-with-line-numbers");
+            for(scope <- List("methods", "edges", "edges-with-line-numbers");
                 metric <- List("true-positives", "false-positives", "false-negatives", "false-positive-boundary", "false-negative-boundary")
                 if(!(scope == "methods" && metric == "false-negative-boundary"))
                 ) {
@@ -271,11 +271,11 @@ object Commandline {
                         (scope match {
                             case "methods" =>
                                 classificationToString(precisionRecall.methods)(metric)
-//                            case "edges" =>
-//                                metric match
-//                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edges.falsePositiveBoundary)
-//                                    case "false-negative-boundary" => boundaryToCSV(precisionRecall.edges.falseNegativeBoundary)
-//                                    case _                         => classificationToString(precisionRecall.edges)(metric)
+                            case "edges" =>
+                                metric match
+                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edges.falsePositiveBoundary)
+                                    case "false-negative-boundary" => boundaryToCSV(precisionRecall.edges.falseNegativeBoundary)
+                                    case _                         => classificationToString(precisionRecall.edges)(metric)
                             case "edges-with-line-numbers" =>
                                 metric match
                                     case "false-positive-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary)
