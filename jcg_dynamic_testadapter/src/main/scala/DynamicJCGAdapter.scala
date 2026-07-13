@@ -62,6 +62,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             var args = List(javaPath.toAbsolutePath.toString)
             args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
+            args :+= s"-Xss1G"
             args :+= s"-XX:-ClassUnloading" // It is important to disable class unloading, such that method ids remain valid.
             args :+= s"-Xcheck:jni" // forces the JVM to validate all JNI/JVMTI arguments, giving descriptive errors instead of silent crashes.
             args :+= s"-XX:ErrorFile=${crashLog.toString}"
