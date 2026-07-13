@@ -32,7 +32,9 @@ case class CommandlineOptions(
                                  comparisonName:            String  = "",
                                  reachableMethodsInclude:   Regex   = Regex(".*"),
                                  edgesInclude:              Regex   = Regex(".* -> .*"),
-                                 withCallSiteLineNumber:    Boolean = false
+                                 withCallSiteLineNumber:    Boolean = false,
+                                 falsePositiveClosureSize:  Boolean = false,
+                                 falseNegativeClosureSize:  Boolean = false
 ) {
     val JRE_LOCATIONS_FILE = "jre.conf"
     val SERIALIZATION_FILE_NAME = "cg.json.gz"
@@ -176,7 +178,17 @@ object CommandlineParser {
                         .text("Regular expression that filters the edges before measuring edge precision and edge recall. An edge \"CallerMethod -> TargetMethod\" is included if it matches the regular expression.")
                         .valueName("regex")
                         .maxOccurs(1)
-                        .optional()
+                        .optional(),
+                    opt[Unit]("false-positive-closure-size")
+                      .action((_, c) => c.copy(falsePositiveClosureSize = true))
+                      .text("compute size of false-positive")
+                      .maxOccurs(1)
+                      .optional(),
+                  opt[Unit]("false-negative-closure-size")
+                    .action((_, c) => c.copy(falseNegativeClosureSize = true))
+                    .text("")
+                    .maxOccurs(1)
+                    .optional()
                 ),
 
             cmd("jdk-callbacks")
