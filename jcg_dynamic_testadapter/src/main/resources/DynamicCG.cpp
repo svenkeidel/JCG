@@ -1,5 +1,8 @@
-
 #include <jvmti.h>
+
+#include <csignal>
+#include <execinfo.h>
+#include <unistd.h>
 
 #include <map>
 #include <unordered_set>

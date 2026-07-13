@@ -3,7 +3,7 @@ import org.opalj.br.{ClassType, FieldAccessMethodHandle, FieldType, FieldTypes, 
 import org.opalj.br.analyses.Project
 import org.opalj.br.instructions.*
 
-import java.io.{BufferedInputStream, File, FileInputStream, Writer}
+import java.io.{BufferedInputStream, File, FileInputStream, IOException, Writer}
 import java.nio.file.{Files, Path, Paths}
 import java.util.zip.GZIPInputStream
 import scala.collection.mutable
@@ -51,6 +51,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         val agentPath = Paths.get("jcg_dynamic_testadapter", "src", "main", "resources", "DynamicCG.so")
 
         val callGraphPath = Files.createTempFile("callgraph", ".json.gz")
+        val crashLog = Files.createTempFile("crash", ".log")
 
         try {
             val agentArgs = Array(callGraphPath.toString).mkString(",")
@@ -62,6 +63,8 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             var args = List(javaPath.toAbsolutePath.toString)
             args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
             args :+= s"-XX:-ClassUnloading" // It is important to disable class unloading, such that method ids remain valid.
+            args :+= s"-Xcheck:jni" // forces the JVM to validate all JNI/JVMTI arguments, giving descriptive errors instead of silent crashes.
+            args :+= s"-XX:ErrorFile=${crashLog.toString}"
             args ++= jvmArgs
             args :+= s"-agentpath:${agentPath.toAbsolutePath}=$agentArgs"
             args ++= List("-cp", classPath.mkString(":"))
@@ -84,11 +87,12 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             println(s"LD_LIBRARY_PATH=${processBuilder.environment().get("LD_LIBRARY_PATH")}")
 
             // For finding memory leaks
-//            processBuilder.environment().put("LD_PRELOAD", "/usr/lib/x86_64-linux-gnu/libasan.so.8")
-//            processBuilder.environment().put("ASAN_OPTIONS", "detect_leaks=1:allow_user_segv_handler=1")
+            //            processBuilder.environment().put("LD_PRELOAD", "/usr/lib/x86_64-linux-gnu/libasan.so.8")
+            //            processBuilder.environment().put("ASAN_OPTIONS", "detect_leaks=1:allow_user_segv_handler=1")
 
             val before = System.nanoTime
-            processBuilder.start().waitFor()
+            val exitCode = processBuilder.start().waitFor()
+            println(s"Dynamic Callgraph Process Exit Code: $exitCode")
             val after = System.nanoTime
 
             println(s"Read call graph from $callGraphPath with ${Files.size(callGraphPath).toDouble / math.pow(10, 6)}MB")
@@ -97,8 +101,19 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             }.get
 
             after - before
+        } catch {
+            case exc: Throwable =>
+                exc.printStackTrace(System.err)
+                throw exc
         } finally {
             Files.delete(callGraphPath)
+
+            try {
+                val content = Files.readString(crashLog)
+                System.err.println(content)
+            } catch {
+                case e: IOException => // Ignore exception in case no crash log was produced.
+            }
         }
     }
 

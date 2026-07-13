@@ -104,7 +104,7 @@ object Commandline {
             } finally {
                 System.gc()
             }
-        }
+        }.get
     }
 
     private def dynamicCallGraphAddDeclaredTargets(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphsDirectory: Path, testCase: String): Unit = {
