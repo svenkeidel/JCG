@@ -152,7 +152,7 @@ struct Call_Site_Hash {
 
 struct Call_Site_Equals {
     bool operator()(const Call_Site& lhs, const Call_Site& rhs) const {
-        return lhs.location == rhs.location;
+        return lhs.method->method_id == rhs.method->method_id && lhs.location == rhs.location;
     }
 };
 
