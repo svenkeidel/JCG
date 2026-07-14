@@ -332,7 +332,10 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
 }
 
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti, JNIEnv* jni_env) {
+    std::lock_guard<std::mutex> lock(method_entry_mutex);
+    std::cout << "JVMTI Agent: VMDeath. Start final serialization.";
     write_cg_to_file(jvmti);
+    std::cout << "JVMTI Agent: Final serialization finished.";
 }
 
 JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
