@@ -273,7 +273,7 @@ void write_cg_to_file(jvmtiEnv *jvmti) {
 
         boost::iostreams::flush(out);
 
-        // out << ", \"methods\": {"sv;
+        out << ", \"methods\": {"sv;
         first = true;
         for (const auto& method : method_pool) {
             if (!first) out << ",\n"sv;
