@@ -32,6 +32,8 @@ case class CommandlineOptions(
                                  comparisonName:            String  = "",
                                  reachableMethodsInclude:   Regex   = Regex(".*"),
                                  edgesInclude:              Regex   = Regex(".* -> .*"),
+                                 reachableMethodsExclude:   Regex   = Regex("(?!)"), // default matches nothing
+                                 edgesExclude:              Regex   = Regex("(?!)"), // default matches nothing
                                  withCallSiteLineNumber:    Boolean = false,
                                  falsePositiveClosureSize:  Boolean = false,
                                  falseNegativeClosureSize:  Boolean = false
@@ -169,13 +171,25 @@ object CommandlineParser {
                         .required(),
                     opt[String]("reachable-methods-include")
                         .action((reachableMethodsInclude, c) => c.copy(reachableMethodsInclude = Regex(reachableMethodsInclude)))
-                        .text("Regular expression that filters the reachable methods before measuring precision and recall. A reachable method is included if it matches the regular expression.")
+                        .text("Regular expression that includes reachable methods before measuring precision and recall. A reachable method is included if and only if it matches the include expression and does not match the exclude expression.")
                         .valueName("regex")
                         .maxOccurs(1)
                         .optional(),
                     opt[String]("edge-include")
                         .action((edgeInclude, c) => c.copy(edgesInclude = Regex(edgeInclude)))
-                        .text("Regular expression that filters the edges before measuring edge precision and edge recall. An edge \"CallerMethod -> TargetMethod\" is included if it matches the regular expression.")
+                        .text("Regular expression that includes edges before measuring edge precision and edge recall. An edge \"CallerMethod -> TargetMethod\" is included if and only if it the include expression and does not match the exclude expression.")
+                        .valueName("regex")
+                        .maxOccurs(1)
+                        .optional(),
+                    opt[String]("reachable-methods-exclude")
+                        .action((reachableMethodsExclude, c) => c.copy(reachableMethodsExclude = Regex(reachableMethodsExclude)))
+                        .text("Regular expression that excludes the reachable methods before measuring precision and recall. A reachable method is excluded if it matches the regular expression.")
+                        .valueName("regex")
+                        .maxOccurs(1)
+                        .optional(),
+                    opt[String]("edge-exclude")
+                        .action((edgeExclude, c) => c.copy(edgesExclude = Regex(edgeExclude)))
+                        .text("Regular expression that excludes the edges before measuring edge precision and edge recall. An edge \"CallerMethod -> TargetMethod\" is excluded if it matches the regular expression.")
                         .valueName("regex")
                         .maxOccurs(1)
                         .optional(),
@@ -184,11 +198,11 @@ object CommandlineParser {
                       .text("compute size of false-positive")
                       .maxOccurs(1)
                       .optional(),
-                  opt[Unit]("false-negative-closure-size")
-                    .action((_, c) => c.copy(falseNegativeClosureSize = true))
-                    .text("")
-                    .maxOccurs(1)
-                    .optional()
+                    opt[Unit]("false-negative-closure-size")
+                      .action((_, c) => c.copy(falseNegativeClosureSize = true))
+                      .text("")
+                      .maxOccurs(1)
+                      .optional()
                 ),
 
             cmd("jdk-callbacks")

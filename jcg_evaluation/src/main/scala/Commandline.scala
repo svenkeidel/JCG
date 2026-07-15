@@ -219,6 +219,8 @@ object Commandline {
                 predictedCallGraph = predictedCallGraph,
                 reachableMethodsInclude = options.reachableMethodsInclude,
                 edgeInclude = options.edgesInclude,
+                reachableMethodsExclude = options.reachableMethodsExclude,
+                edgeExclude = options.edgesExclude,
                 computeFalsePositiveClosureSize = options.falsePositiveClosureSize,
                 computeFalseNegativeClosureSize = options.falseNegativeClosureSize
             )

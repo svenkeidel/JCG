@@ -86,13 +86,15 @@ case class PrecisionRecall(
       predictedCallGraph: Map[Method, Set[CallSite]],
       reachableMethodsInclude: Regex,
       edgeInclude: Regex,
+      reachableMethodsExclude: Regex,
+      edgeExclude: Regex,
       computeFalsePositiveClosureSize: Boolean,
       computeFalseNegativeClosureSize: Boolean
 ):
 
     val methods: Classification[Method] = Classification[Method](
-        actualCallGraph.keySet.filter(method => reachableMethodsInclude.matches(method.declaringClass)),
-        predictedCallGraph.keySet.filter(method => reachableMethodsInclude.matches(method.declaringClass))
+        actualCallGraph.keySet.filter(method => reachableMethodsInclude.matches(method.declaringClass) && !reachableMethodsExclude.matches(method.declaringClass)),
+        predictedCallGraph.keySet.filter(method => reachableMethodsInclude.matches(method.declaringClass) && !reachableMethodsExclude.matches(method.declaringClass))
     )
 
     val edges: EdgeClassification = EdgeClassification(
@@ -113,8 +115,9 @@ case class PrecisionRecall(
         val result = for {
             (caller, callSites) <- cg;
             callSite <- callSites;
-            target <- callSite.targets
-            if(edgeInclude.matches(s"${caller.declaringClass} -> ${target.declaringClass}"))
+            target <- callSite.targets;
+            edgeString = s"${caller.declaringClass} -> ${target.declaringClass}";
+            if(edgeInclude.matches(edgeString) && !edgeExclude.matches(edgeString))
             line = if(withCallSiteLineNumber) Some(callSite.line) else None
         } yield(Edge(caller = caller, line = line, declaredTarget = callSite.declaredTarget, target = target))
         result.toSet
