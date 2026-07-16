@@ -18,6 +18,7 @@ case class CommandlineOptions(
                                  projectsDir:     Path              = Paths.get("."),
                                  callGraphsDir:   Path              = Paths.get("."),
                                  adapters:        List[TestAdapter] = List.empty,
+                                 projects:        Seq[String]       = Seq.empty,
                                  projectFilter:   String            = "",
                                  algorithmFilter: String            = "",
                                  timeout:         Int               = -1,
@@ -70,6 +71,12 @@ object CommandlineParser {
                     if (FileOperations.hasFilesDeep(path.toFile, ".conf", ".js", ".py")) success
                     else failure(s"${path.toAbsolutePath} does not contain *.conf, *.js or *.py files")
                 },
+            opt[Seq[String]]("projects")
+                .action((projects, c) => c.copy(projects = projects))
+                .text("A comma-separated list of projects to process.")
+                .valueName("<projects>")
+                .maxOccurs(1).optional(),
+
             opt[String]("project-prefix")
                 .action((prefix, c) => c.copy(projectFilter = prefix))
                 .text("Defines a prefix-based filter for the input project's name. If applied only projects starting with the <prefix> will be processed.")

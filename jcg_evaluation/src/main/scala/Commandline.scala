@@ -28,7 +28,14 @@ object Commandline {
 
         val projectSpecPaths =
             Files.list(options.projectsDir)
-                .filter(path => path.toString.endsWith(".conf") && path.toString.contains(options.projectFilter))
+                .filter { path =>
+                    if(path.toString.endsWith(".conf")) {
+                        val project = path.getFileName.toString.stripSuffix(".conf")
+                        project.startsWith(options.projectFilter) && (options.projects.isEmpty || options.projects.contains(project))
+                    } else {
+                        false
+                    }
+                }
                 .sorted
                 .toScala(List)
 
