@@ -378,38 +378,30 @@ void write_cg_to_file(jvmtiEnv *jvmti) {
     // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
 }
 
-void throw_stackoverflow_exception(JNIEnv *jni_env, const char *message) {
-    // 1. Find the target Error class
-    jclass errorClass = jni_env->FindClass("java/lang/StackOverflowError");
+bool inside_throw_stackoverflow_exception = false;
+void throw_stackoverflow_exception(JNIEnv *jni) {
+    inside_throw_stackoverflow_exception = true;
 
-    if (errorClass != NULL) {
-        // 2. Raise the exception instantly on the active thread
-        jni_env->ThrowNew(errorClass, message);
+    jclass stackOverflowClass = jni->FindClass("java/lang/StackOverflowError");
+    if (stackOverflowClass != nullptr) {
+        jni->ThrowNew(stackOverflowClass, "JVMTI Agent: Maximum stack depth reached.");
+        jni->DeleteLocalRef(stackOverflowClass);
     }
 
-    // Clean up local reference to prevent leaks
-    jni_env->DeleteLocalRef(errorClass);
+    inside_throw_stackoverflow_exception = false;
 }
 
+
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
+    // This early return ensures that we do not get in a deadlock:
+    // MethodEntry -> throw_stackoverflow_exception -> MethodEntry (Deadlock)
+    if (inside_throw_stackoverflow_exception) {
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(method_entry_mutex);
 
     try {
-        if (method_calls % 1000000 == 0) {
-            std::cout << "method calls = "sv << method_calls << ", "sv
-                      << "callTree.size = "sv << call_tree.size() << ", callTree.depth = " << call_tree.depth() << ", "sv
-                      << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
-                      << "methodPool.size = "sv << method_pool.size();
-            if (method_calls % 10000000 == 0) {
-                std::cout << ", serialize callgraph\n"sv;
-                write_cg_to_file(jvmti);
-            } else {
-                std::cout << "\n"sv;
-            }
-            std::cout.flush();
-        }
-        method_calls += 1;
-
         static const jint start_depth = 0;
 
         jvmtiError err;
@@ -417,16 +409,30 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
             throw std::runtime_error("cannot get stacktrace.");
         }
 
-        call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
-
         if (stack_size == max_stack_depth) {
-            throw_stackoverflow_exception(jni, "JVMTI Agent: Maximum stack depth reached.");
-        }
+            throw_stackoverflow_exception(jni);
+        } else {
+            call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
 
+            if (method_calls % 1000000 == 0) {
+                std::cout << "method calls = "sv << method_calls << ", "sv
+                        << "callTree.size = "sv << call_tree.size() << ", callTree.depth = " << call_tree.depth() << ", "sv
+                        << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
+                        << "methodPool.size = "sv << method_pool.size();
+                if (method_calls % 10000000 == 0) {
+                    std::cout << ", serialize callgraph\n"sv;
+                    write_cg_to_file(jvmti);
+                } else {
+                    std::cout << "\n"sv;
+                }
+                std::cout.flush();
+            }
+            method_calls += 1;
+        }
     } catch (const std::runtime_error& e) {
-        std::cout << "JVMTI Agent: Caught runtime error: " << e.what() << '\n';
+        std::cerr << "JVMTI Agent: Caught runtime error: "sv;
     } catch (...) {
-        std::cerr << "JVMTI Agent: unknown exception\n";
+        std::cerr << "JVMTI Agent: unknown exception\n"sv;
     }
 
 }
