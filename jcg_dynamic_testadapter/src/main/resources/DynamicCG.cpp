@@ -171,47 +171,75 @@ struct Call_Site_Pointer_Equals {
 std::unordered_set<Call_Site, Call_Site_Hash, Call_Site_Equals> call_site_pool;
 
 struct Call_Tree {
-    std::unordered_map<const Call_Site*, std::unique_ptr<Call_Tree>, Call_Site_Pointer_Hash, Call_Site_Pointer_Equals> children;
+    struct Node {
+        const Call_Site* call_site;
+        std::size_t first_child;
+        std::size_t next_sibling;
+    };
+    std::vector<Node> nodes;
+
+    static constexpr std::size_t null_idx = static_cast<std::size_t>(-1);
 
     Call_Tree() {
-        children.reserve(1);
+        // Initialize the root node at index 0
+        nodes.push_back(Node{nullptr, null_idx, null_idx});
     }
 
-    // This function is non-recursive on purpose to avoid stack-overflows in the JVMTI agent.
     void add_stack_trace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
-        Call_Tree *current_node = this;
+        std::size_t current_idx = 0; // Start at the root node index
 
-        while (stack_size > 0) {
-            auto [it, _inserted] = call_site_pool.insert(Call_Site (stack_frames[stack_size - 1].method, stack_frames[stack_size - 1].location ));
-
+        for (int i = stack_size - 1; i >= 0; i--) {
+            // 1. Retrieve or insert Call_Site from the global pool
+            auto [it, _inserted] = call_site_pool.insert(Call_Site(stack_frames[i].method, stack_frames[i].location));
             const Call_Site* topmost = &(*it);
 
-            auto [map_it, inserted] = current_node->children.try_emplace(topmost, nullptr);
+            // 2. Search among the direct children of the current node
+            std::size_t child_idx = nodes[current_idx].first_child;
+            std::size_t prev_sibling_idx = null_idx;
+            bool found = false;
 
-            if (inserted) {
-                map_it->second = std::make_unique<Call_Tree>();
+            while (child_idx != null_idx) {
+                if (nodes[child_idx].call_site == topmost) {
+                    found = true;
+                    break; // Node exists; step into it
+                }
+                prev_sibling_idx = child_idx;
+                child_idx = nodes[child_idx].next_sibling;
             }
 
-            // 3. Move cleanly to the next node down the branch
-            current_node = map_it->second.get();
-            stack_size -= 1;
+            // 3. If the matching child node wasn't found, allocate and link a new one
+            if (!found) {
+                std::size_t new_node_idx = nodes.size();
+                nodes.push_back(Node{topmost, null_idx, null_idx});
+
+                if (prev_sibling_idx == null_idx) {
+                    // This is the very first child of the current node
+                    nodes[current_idx].first_child = new_node_idx;
+                } else {
+                    // Append to the end of the existing sibling linked-list
+                    nodes[prev_sibling_idx].next_sibling = new_node_idx;
+                }
+                child_idx = new_node_idx;
+            }
+
+            // 4. Move cleanly to the next node down the branch using indices
+            current_idx = child_idx;
         }
     }
 
     // This function is non-recursive on purpose to avoid stack-overflows in the JVMTI agent.
     void to_json(jvmtiEnv *_jvmti, boost::iostreams::filtering_ostream& out) const {
-        using MapType = std::unordered_map<const Call_Site*, std::unique_ptr<Call_Tree>, Call_Site_Pointer_Hash, Call_Site_Pointer_Equals>;
+        if (nodes.empty()) return;
 
-        // Stack stores: current node pointer, current child iterator, and end iterator
         struct StackFrame {
-            const Call_Tree* tree;
-            MapType::const_iterator current_child;
-            MapType::const_iterator end_child;
+            std::size_t node_idx;
+            std::size_t current_child_idx;
             bool initial_visit;
         };
 
         std::vector<StackFrame> stack;
-        stack.push_back(StackFrame{this, children.begin(), children.end(), true});
+        // Start with the root node at index 0
+        stack.push_back(StackFrame{0, nodes[0].first_child, true});
 
         while (!stack.empty()) {
             auto& frame = stack.back();
@@ -221,21 +249,22 @@ struct Call_Tree {
                 frame.initial_visit = false;
             }
 
-            if (frame.current_child != frame.end_child) {
-                // If this is not the first child of the current object, print a comma
-                if (frame.current_child != frame.tree->children.begin()) {
+            if (frame.current_child_idx != null_idx) {
+                // Check if this child is the first child of the parent to handle commas correctly
+                if (frame.current_child_idx != nodes[frame.node_idx].first_child) {
                     out << ","sv;
                 }
 
-                const auto& [callSite, subTree] = *frame.current_child;
-                out << "\""sv << callSite << "\": "sv;
+                std::size_t child_idx = frame.current_child_idx;
+                const auto& child_node = nodes[child_idx];
 
-                // Advance the iterator for the current frame before diving deeper
-                auto next_child = frame.current_child;
-                ++frame.current_child;
+                out << "\""sv << child_node.call_site << "\": "sv;
 
-                // Push the child node onto the stack to simulate the recursive call
-                stack.push_back(StackFrame {subTree.get(), subTree->children.begin(), subTree->children.end(), true});
+                // Advance the child index for the current frame before descending
+                frame.current_child_idx = child_node.next_sibling;
+
+                // Push child node onto the stack to simulate recursive call
+                stack.push_back(StackFrame{child_idx, child_node.first_child, true});
             } else {
                 // All children processed, close the object and pop the frame
                 out << "}"sv;
@@ -244,34 +273,42 @@ struct Call_Tree {
         }
     }
 
-    std::pair<unsigned int, unsigned int> size_and_depth() const {
-        unsigned int total_size = 0;
+    unsigned int size() const {
+        return nodes.size();
+    }
+
+    unsigned int depth() const {
+        if (nodes.empty()) {
+            return 0;
+        }
+
         unsigned int max_depth = 0;
 
-        // Stack pairs: [Node Pointer, Current Depth]
-        std::vector<std::pair<const Call_Tree*, unsigned int>> stack;
-        stack.reserve(64); // Pre-allocate to prevent early reallocations
+        // Stack pairs: [Node Index, Current Depth]
+        std::vector<std::pair<std::size_t, unsigned int>> stack;
+        stack.reserve(64); // Safe stack budget for typical stack depths
 
-        stack.push_back({this, 1});
+        // Start traversing from the root node (index 0) at depth 1
+        stack.push_back({0, 1});
 
         while (!stack.empty()) {
-            auto [current, current_depth] = stack.back();
+            auto [current_idx, current_depth] = stack.back();
             stack.pop_back();
 
-            total_size += 1;
             max_depth = std::max(max_depth, current_depth);
 
-            for (const auto& [callSite, subTree] : current->children) {
-                if (subTree) {
-                    stack.push_back({subTree.get(), current_depth + 1});
-                }
+            // Push all direct children of the current node onto the stack
+            std::size_t child_idx = nodes[current_idx].first_child;
+            while (child_idx != null_idx) {
+                stack.push_back({child_idx, current_depth + 1});
+                child_idx = nodes[child_idx].next_sibling;
             }
         }
 
-        // Returns {size, max_depth}
-        return {total_size, max_depth};
+        return max_depth;
     }
 };
+
 static Call_Tree call_tree;
 
 static std::mutex method_entry_mutex;
@@ -346,9 +383,8 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
     std::lock_guard<std::mutex> lock(method_entry_mutex);
     try {
         if (method_calls % 1000000 == 0) {
-            auto [size, depth] = call_tree.size_and_depth();
             std::cout << "method calls = "sv << method_calls << ", "sv
-                      << "callTree.size = "sv << size << ", callTree.depth = " << depth << ", "sv
+                      << "callTree.size = "sv << call_tree.size() << ", callTree.depth = " << call_tree.depth() << ", "sv
                       << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
                       << "methodPool.size = "sv << method_pool.size();
             if (method_calls % 10000000 == 0) {
