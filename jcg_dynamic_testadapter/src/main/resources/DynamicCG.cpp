@@ -177,53 +177,99 @@ struct Call_Tree {
         children.reserve(1);
     }
 
+    // This function is non-recursive on purpose to avoid stack-overflows in the JVMTI agent.
     void add_stack_trace(jvmtiEnv *jvmti, jvmtiFrameInfo* stack_frames, jint stack_size) {
-        if(stack_size > 0) {
+        Call_Tree *current_node = this;
+
+        while (stack_size > 0) {
             auto [it, _inserted] = call_site_pool.insert(Call_Site (stack_frames[stack_size - 1].method, stack_frames[stack_size - 1].location ));
 
             const Call_Site* topmost = &(*it);
 
-            if(! children.contains(topmost)) {
-                children.emplace(topmost, std::make_unique<Call_Tree>());
+            auto [map_it, inserted] = current_node->children.try_emplace(topmost, nullptr);
+
+            if (inserted) {
+                map_it->second = std::make_unique<Call_Tree>();
             }
 
-            children[topmost]->add_stack_trace(jvmti, stack_frames, stack_size - 1);
+            // 3. Move cleanly to the next node down the branch
+            current_node = map_it->second.get();
+            stack_size -= 1;
         }
     }
 
+    // This function is non-recursive on purpose to avoid stack-overflows in the JVMTI agent.
     void to_json(jvmtiEnv *_jvmti, boost::iostreams::filtering_ostream& out) const {
-        out << "{"sv;
+        using MapType = std::unordered_map<const Call_Site*, std::unique_ptr<Call_Tree>, Call_Site_Pointer_Hash, Call_Site_Pointer_Equals>;
 
-        bool first = true;
-        for (const auto& [callSite, subTree] : children) {
+        // Stack stores: current node pointer, current child iterator, and end iterator
+        struct StackFrame {
+            const Call_Tree* tree;
+            MapType::const_iterator current_child;
+            MapType::const_iterator end_child;
+            bool initial_visit;
+        };
 
-            if (! first) {
-                out << ","sv;
+        std::vector<StackFrame> stack;
+        stack.push_back(StackFrame{this, children.begin(), children.end(), true});
+
+        while (!stack.empty()) {
+            auto& frame = stack.back();
+
+            if (frame.initial_visit) {
+                out << "{"sv;
+                frame.initial_visit = false;
             }
 
-            out << "\""sv << callSite << "\": "sv;
-            subTree->to_json(jvmti, out);
+            if (frame.current_child != frame.end_child) {
+                // If this is not the first child of the current object, print a comma
+                if (frame.current_child != frame.tree->children.begin()) {
+                    out << ","sv;
+                }
 
-            first = false;
+                const auto& [callSite, subTree] = *frame.current_child;
+                out << "\""sv << callSite << "\": "sv;
+
+                // Advance the iterator for the current frame before diving deeper
+                auto next_child = frame.current_child;
+                ++frame.current_child;
+
+                // Push the child node onto the stack to simulate the recursive call
+                stack.push_back(StackFrame {subTree.get(), subTree->children.begin(), subTree->children.end(), true});
+            } else {
+                // All children processed, close the object and pop the frame
+                out << "}"sv;
+                stack.pop_back();
+            }
         }
-
-        out << "}"sv;
     }
 
-    unsigned int size() const {
-        unsigned int s = 1;
-        for (const auto& [callSite, subTree] : children) {
-            s += subTree->size();
-        }
-        return s;
-    }
+    std::pair<unsigned int, unsigned int> size_and_depth() const {
+        unsigned int total_size = 0;
+        unsigned int max_depth = 0;
 
-    unsigned int bucket_sum() const {
-        unsigned int sum = children.bucket_count();
-        for (const auto& [callSite, subTree] : children) {
-            sum += subTree->bucket_sum();
+        // Stack pairs: [Node Pointer, Current Depth]
+        std::vector<std::pair<const Call_Tree*, unsigned int>> stack;
+        stack.reserve(64); // Pre-allocate to prevent early reallocations
+
+        stack.push_back({this, 1});
+
+        while (!stack.empty()) {
+            auto [current, current_depth] = stack.back();
+            stack.pop_back();
+
+            total_size += 1;
+            max_depth = std::max(max_depth, current_depth);
+
+            for (const auto& [callSite, subTree] : current->children) {
+                if (subTree) {
+                    stack.push_back({subTree.get(), current_depth + 1});
+                }
+            }
         }
-        return sum;
+
+        // Returns {size, max_depth}
+        return {total_size, max_depth};
     }
 };
 static Call_Tree call_tree;
@@ -300,8 +346,9 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
     std::lock_guard<std::mutex> lock(method_entry_mutex);
     try {
         if (method_calls % 1000000 == 0) {
+            auto [size, depth] = call_tree.size_and_depth();
             std::cout << "method calls = "sv << method_calls << ", "sv
-                      << "callTree.size = "sv << call_tree.size() << ", callTree.bucketSum = " << call_tree.bucket_sum() << ", "sv
+                      << "callTree.size = "sv << size << ", callTree.depth = " << depth << ", "sv
                       << "callSitePool.size = "sv << call_site_pool.size() << ", "sv
                       << "methodPool.size = "sv << method_pool.size();
             if (method_calls % 10000000 == 0) {
@@ -333,9 +380,9 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
 
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti, JNIEnv* jni_env) {
     std::lock_guard<std::mutex> lock(method_entry_mutex);
-    std::cout << "JVMTI Agent: VMDeath. Start final serialization.";
+    std::cout << "JVMTI Agent: VMDeath. Start final serialization.\n";
     write_cg_to_file(jvmti);
-    std::cout << "JVMTI Agent: Final serialization finished.";
+    std::cout << "JVMTI Agent: Final serialization finished.\n";
 }
 
 JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
