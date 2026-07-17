@@ -380,15 +380,15 @@ void write_cg_to_file(jvmtiEnv *jvmti) {
 
 void throw_stackoverflow_exception(JNIEnv *jni_env, const char *message) {
     // 1. Find the target Error class
-    jclass errorClass = (*jni_env)->FindClass(jni_env, "java/lang/StackOverflowError");
+    jclass errorClass = jni_env->FindClass("java/lang/StackOverflowError");
 
     if (errorClass != NULL) {
         // 2. Raise the exception instantly on the active thread
-        (*jni_env)->ThrowNew(jni_env, errorClass, message);
+        jni_env->ThrowNew(errorClass, message);
     }
 
     // Clean up local reference to prevent leaks
-    (*jni_env)->DeleteLocalRef(jni_env, errorClass);
+    jni_env->DeleteLocalRef(errorClass);
 }
 
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
@@ -420,7 +420,7 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
         call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
 
         if (stack_size == max_stack_depth) {
-            throw_stackoverflow_exception(jvmti, "JVMTI Agent: Maximum stack depth reached.");
+            throw_stackoverflow_exception(jni, "JVMTI Agent: Maximum stack depth reached.");
         }
 
     } catch (const std::runtime_error& e) {
