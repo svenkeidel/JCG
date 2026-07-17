@@ -181,7 +181,7 @@ struct Call_Tree {
     static constexpr std::size_t null_idx = static_cast<std::size_t>(-1);
 
     Call_Tree() {
-        // Initialize the root node at index 0
+        nodes.reserve(10000000);
         nodes.push_back(Node{nullptr, null_idx, null_idx});
     }
 
