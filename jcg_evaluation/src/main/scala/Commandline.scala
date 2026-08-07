@@ -67,48 +67,52 @@ object Commandline {
             else
                 callGraphsDirectory.resolve(s"$testCase-callgraph.gz")
 
-        Using(makeCallGraphWriter(callGraphPath)) { callGraphWriter =>
+        if(! options.overwriteCallgraph && Files.exists(callGraphPath))
+            println(s"Call graph file $callGraphPath exists. Do not run analysis.")
+        else {
+            Using(makeCallGraphWriter(callGraphPath)) { callGraphWriter =>
 
-            println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
+                println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
 
-            val future = Future {
-                try {
-                    adapter.serializeCG(
-                        cgAlgo,
-                        projectSpec.target(options.projectsDir.toFile).getCanonicalPath,
-                        callGraphWriter,
-                        AdapterOptions.makeJavaOptions(
-                            projectSpec.main.orNull,
-                            projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
-                            projectSpec.java,
-                            jreLocations(projectSpec.java),
-                            target = projectSpec.target(options.projectsDir.toFile).toString,
-                            jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
-                            analyzeJDK = options.analyzeJdk,
-                            analysisArguments = options.analysisArgs.split(" ")
+                val future = Future {
+                    try {
+                        adapter.serializeCG(
+                            cgAlgo,
+                            projectSpec.target(options.projectsDir.toFile).getCanonicalPath,
+                            callGraphWriter,
+                            AdapterOptions.makeJavaOptions(
+                                projectSpec.main.orNull,
+                                projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
+                                projectSpec.java,
+                                jreLocations(projectSpec.java),
+                                target = projectSpec.target(options.projectsDir.toFile).toString,
+                                jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
+                                analyzeJDK = options.analyzeJdk,
+                                analysisArguments = options.analysisArgs.split(" ")
+                            )
                         )
-                    )
-                } catch {
-                    case e: Throwable =>
-                        println(s"exception in project ${projectSpec.name}")
-                        e.printStackTrace()
-                        -1
+                    } catch {
+                        case e: Throwable =>
+                            println(s"exception in project ${projectSpec.name}")
+                            e.printStackTrace()
+                            -1
+                    }
                 }
-            }
 
-            try {
-                val elapsed = tryAwait(options.timeout, future)
-                reportTiming(callGraphsDirectory, testCase, elapsed)
-            } catch {
-                case _: TimeoutException =>
-                    println(s"Timeout after ${options.timeout} seconds")
-                    val result = Timeout
-                    reportTiming(callGraphsDirectory, testCase, -1)
-                case e: Throwable => println(e.getMessage)
-            } finally {
-                System.gc()
-            }
-        }.get
+                try {
+                    val elapsed = tryAwait(options.timeout, future)
+                    reportTiming(callGraphsDirectory, testCase, elapsed)
+                } catch {
+                    case _: TimeoutException =>
+                        println(s"Timeout after ${options.timeout} seconds")
+                        val result = Timeout
+                        reportTiming(callGraphsDirectory, testCase, -1)
+                    case e: Throwable => println(e.getMessage)
+                } finally {
+                    System.gc()
+                }
+            }.get
+        }
     }
 
     private def dynamicCallGraphAddDeclaredTargets(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphsDirectory: Path, testCase: String): Unit = {

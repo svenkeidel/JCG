@@ -33,6 +33,7 @@ case class CommandlineOptions(
                                  analyzeJdk:      Boolean           = false,
                                  analysisArgs:    String            = "",
 
+                                 overwriteCallgraph:        Boolean = false,
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
                                  comparisonName:            String  = "",
                                  comparisonScope: ComparisonScope   = ComparisonScope.All,
@@ -131,6 +132,9 @@ object CommandlineParser {
                 .action((_,c) => c.copy(action = Action.Analyze))
                 .text("run call graph analyses on projects")
                 .children(
+                    opt[Unit]("overwrite-callgraph")
+                        .action((_, c) => c.copy(overwriteCallgraph = true))
+                        .maxOccurs(1).optional(),
                     opt[String]("analysis-args")
                         .action((args, c) => c.copy(analysisArgs = args))
                         .text("additional arguments passed to the call graph analyses")
