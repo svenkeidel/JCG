@@ -61,13 +61,16 @@ object Util {
 
 
     def readJSON(callGraphPath: Path): JsValue = {
-        Using(if (callGraphPath.getFileName.toString.endsWith(".gz"))
+        val bytes = Using(if (callGraphPath.getFileName.toString.endsWith(".gz"))
                 new GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))
             else
                 BufferedInputStream(FileInputStream(callGraphPath.toFile))
-        ) { input =>
-            Json.parse(input)
+        ) { input => input.readAllBytes()
         }.get
+        if(bytes.isEmpty)
+            throw java.io.IOException(s"Call graph file $callGraphPath is empty")
+        else
+            Json.parse(bytes)
     }
 
     def readReachableMethods(callGraphPath: Path): ReachableMethods = {

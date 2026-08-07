@@ -42,10 +42,10 @@ object JavaTestExtractor extends TestCaseExtractor {
             val bin = new File(temp.getAbsolutePath, s"$projectName/bin/")
             bin.mkdirs()
 
-            val targetDirs = FileOperations.findJCGTargetDirs()
-            val classPath = Seq(".", FileOperations.targetDirsToCP(targetDirs), System.getProperty("java.home")).mkString(s"${File.pathSeparator}")
+//            val targetDirs = FileOperations.findJCGTargetDirs()
+            val classPath = Seq("jcg_annotations.jar", System.getProperty("java.home")).mkString(s"${File.pathSeparator}")
 
-            val compilerArgs = Seq("-cp", s"$classPath", "-d", bin.getAbsolutePath, "-encoding", "UTF-8", "--release", "8") ++ srcFiles
+            val compilerArgs = Seq("-cp", s"$classPath", "-d", bin.getAbsolutePath, "-encoding", "UTF-8", "-source", "8", "-target", "8") ++ srcFiles
 
             if (TestCaseExtractor.debug) {
                 println(compilerArgs.mkString("[DEBUG] Compiler args: \n\n", "\n", "\n\n"))
@@ -86,7 +86,7 @@ object JavaTestExtractor extends TestCaseExtractor {
                 name = projectName,
                 java = 8,
                 main = mainOpt,
-                target = new File(outPathCompiler.getAbsolutePath).getCanonicalPath,
+                target = "/repo/" + new File(outPathCompiler.getAbsolutePath).getName,
                 compare_package = None,
                 cp = None,
                 jvm_args = None

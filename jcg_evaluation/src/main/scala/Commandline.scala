@@ -123,40 +123,48 @@ object Commandline {
     }
 
     private def assessCallGraph(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
-        val callGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
+        try {
 
-        val assessment: Assessment = options.language match {
-            case "java" =>
-                val callGraph = Util.readReachableMethods(callGraphPath).toMap
+            val callGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
 
-                CGMatcher.matchCallSites(
-                    projectSpec,
-                    jreLocations(projectSpec.java),
-                    callGraphDirectory.toFile,
-                    callGraph,
-                    options.debug
-                )
-            case "javascript" | "python" =>
+            val assessment: Assessment = options.language match {
+                case "java" =>
+                    val callGraph = Util.readReachableMethods(callGraphPath).toMap
 
-                if (!Files.exists(callGraphPath))
-                    throw IllegalArgumentException(s"Call graph file $callGraphPath does not exist.")
+                    CGMatcher.matchCallSites(
+                        projectSpec,
+                        jreLocations(projectSpec.java),
+                        callGraphDirectory.toFile,
+                        callGraph,
+                        options.debug
+                    )
+                case "javascript" | "python" =>
 
-                val callGraph = new AdapterCG(callGraphPath.toFile)
+                    if (!Files.exists(callGraphPath))
+                        throw IllegalArgumentException(s"Call graph file $callGraphPath does not exist.")
 
-                val expectedCallGraphPath = options.projectsDir.resolve(s"$testCase.json")
+                    val callGraph = new AdapterCG(callGraphPath.toFile)
 
-                if (!Files.exists(expectedCallGraphPath))
-                    throw IllegalArgumentException(s"Call graph file $expectedCallGraphPath does not exist.")
+                    val expectedCallGraphPath = options.projectsDir.resolve(s"$testCase.json")
 
-                val expectedCG = new ExpectedCG(expectedCallGraphPath.toFile)
+                    if (!Files.exists(expectedCallGraphPath))
+                        throw IllegalArgumentException(s"Call graph file $expectedCallGraphPath does not exist.")
 
-                val isSound = callGraph.compareLinks(expectedCG).length == 0
-                if (isSound) Sound else Unsound
+                    val expectedCG = new ExpectedCG(expectedCallGraphPath.toFile)
+
+                    val isSound = callGraph.compareLinks(expectedCG).length == 0
+                    if (isSound) Sound else Unsound
+            }
+
+            val outputPath = callGraphDirectory.resolve(s"$testCase-assessment.txt")
+
+            Files.write(outputPath, assessment.toString.getBytes(StandardCharsets.UTF_8))
+
+        } catch {
+            case exc: Throwable =>
+                System.err.println(s"Error while processing ${testCase}")
+                exc.printStackTrace()
         }
-
-        val outputPath = callGraphDirectory.resolve(s"$testCase-assessment.txt")
-
-        Files.write(outputPath, assessment.toString.getBytes(StandardCharsets.UTF_8))
     }
 
     def computeCallGraphSize(options: CommandlineOptions, callGraphDirectory: Path, testCase: String): Unit = {
