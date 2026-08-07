@@ -1,14 +1,10 @@
 import java.io.*
 import java.nio.file.*
-import java.util.zip.{GZIPOutputStream}
+import java.util.zip.GZIPOutputStream
 import play.api.libs.json.{JsValue, Json, Writes}
 
 import java.nio.charset.StandardCharsets
-import scala.io.Source
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.Failure
-import scala.util.Success
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.TimeoutException
@@ -16,6 +12,7 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.duration.DurationInt
 import scala.util.Using
 import scala.jdk.StreamConverters.*
+import scala.util.matching.compat.Regex
 
 object Commandline {
 
@@ -55,7 +52,7 @@ object Commandline {
                     case Action.Analyze => runAnalysis(options, jreLocations, projectSpec, adapter, cgAlgo, callGraphsDirectory, testCase)
                     case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
                     case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
-                    case Action.PrecisionRecall => computePrecisionRecall(options, callGraphsDirectory, testCase)
+                    case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, callGraphsDirectory, testCase)
                     case Action.JDKCallbacks => computeJDKCallBacks(options, callGraphsDirectory, testCase)
                     case Action.DynamicCallGraphAddDeclaredTargets => dynamicCallGraphAddDeclaredTargets(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
             }
@@ -212,7 +209,7 @@ object Commandline {
         }
     }
 
-    def computePrecisionRecall(options: CommandlineOptions, callGraphDirectory: Path, testCase: String): Unit = {
+    def computePrecisionRecall(options: CommandlineOptions, projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
         try {
             val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
             val predictedCallGraph = Util.readReachableMethods(predictedCallGraphPath).toMap
@@ -224,6 +221,11 @@ object Commandline {
             val precisionRecall = PrecisionRecall(
                 actualCallGraph = truthCallGraph.toReachableMethods.toMap,
                 predictedCallGraph = predictedCallGraph,
+                packageScope = options.comparisonScope match
+                    case ComparisonScope.All => Regex(".*")
+                    case ComparisonScope.Package => projectSpec.compare_package match
+                        case Some(pkg) => Regex(s"L$pkg.*")
+                        case None => Regex(".*"),
                 reachableMethodsInclude = options.reachableMethodsInclude,
                 edgeInclude = options.edgesInclude,
                 reachableMethodsExclude = options.reachableMethodsExclude,

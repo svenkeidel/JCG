@@ -13,6 +13,10 @@ enum Action:
     case JDKCallbacks
     case DynamicCallGraphAddDeclaredTargets
 
+enum ComparisonScope:
+    case All
+    case Package
+
 case class CommandlineOptions(
                                  action:          Action            = Action.Analyze,
                                  projectsDir:     Path              = Paths.get("."),
@@ -31,13 +35,14 @@ case class CommandlineOptions(
 
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
                                  comparisonName:            String  = "",
+                                 comparisonScope: ComparisonScope   = ComparisonScope.All,
                                  reachableMethodsInclude:   Regex   = Regex(".*"),
                                  edgesInclude:              Regex   = Regex(".* -> .*"),
                                  reachableMethodsExclude:   Regex   = Regex("(?!)"), // default matches nothing
                                  edgesExclude:              Regex   = Regex("(?!)"), // default matches nothing
                                  withCallSiteLineNumber:    Boolean = false,
                                  falsePositiveClosureSize:  Boolean = false,
-                                 falseNegativeClosureSize:  Boolean = false
+                                 falseNegativeClosureSize:  Boolean = false,
 ) {
     val JRE_LOCATIONS_FILE = "jre.conf"
     val SERIALIZATION_FILE_NAME = "cg.json.gz"
@@ -176,6 +181,25 @@ object CommandlineParser {
                         .text("Name for the precision/recall measurement. The name is appended to the json file name that contains the precision/recall numbers.")
                         .maxOccurs(1)
                         .required(),
+                    opt[String]("comparison-scope")
+                        .action((scope, c) =>
+                            c.copy(comparisonScope = scope.toLowerCase match {
+                                case "all" => ComparisonScope.All
+                                case "package" => ComparisonScope.Package
+                            })
+                        )
+                        .valueName("(all|package)")
+                        .text("Scope on which reachable methods and call graph edges are compared. If scope is 'package', " +
+                            "then the regular expression 'compare_package' from the project specification file is used to define the scope.")
+                        .maxOccurs(1)
+                        .optional()
+                        .validate(scope =>
+                            val validScopes = Set("all", "package")
+                            if(validScopes.contains(scope.toLowerCase))
+                                success
+                            else
+                                failure(s"scope $scope not a valid scope. Scope must be one of $validScopes")
+                        ),
                     opt[String]("reachable-methods-include")
                         .action((reachableMethodsInclude, c) => c.copy(reachableMethodsInclude = Regex(reachableMethodsInclude)))
                         .text("Regular expression that includes reachable methods before measuring precision and recall. A reachable method is included if and only if it matches the include expression and does not match the exclude expression.")

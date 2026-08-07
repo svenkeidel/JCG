@@ -30,7 +30,13 @@ object XCorpusProjectSpecExtractor {
 
             // todo we need the main class and the java version
             val projectSpec = ProjectSpecification(
-                projectName, 8, None, bin.getAbsolutePath, Some(libs.map(LocalClassPathEntry(_))), None
+                name = projectName,
+                java = 8,
+                main = None,
+                compare_package = None,
+                target = bin.getAbsolutePath,
+                cp = Some(libs.map(LocalClassPathEntry(_))),
+                jvm_args = None
             )
             val projectSpecJson: JsValue = Json.toJson(projectSpec)
 

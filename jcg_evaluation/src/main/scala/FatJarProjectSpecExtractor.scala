@@ -12,7 +12,15 @@ object FatJarProjectSpecExtractor {
         for (fatJar ← projectsDir.listFiles(_.getName.endsWith(".jar"))) {
             val name = fatJar.getName.replace(".jar", "")
 
-            val projectSpec = ProjectSpecification(name, 8, None, fatJar.getAbsolutePath, None, None)
+            val projectSpec = ProjectSpecification(
+                name = name,
+                java = 8,
+                main = None,
+                compare_package = None,
+                target = fatJar.getAbsolutePath,
+                cp = None,
+                jvm_args = None
+            )
 
             val projectSpecJson: JsValue = Json.toJson(projectSpec)
 

@@ -87,6 +87,7 @@ object JavaTestExtractor extends TestCaseExtractor {
                 java = 8,
                 main = mainOpt,
                 target = new File(outPathCompiler.getAbsolutePath).getCanonicalPath,
+                compare_package = None,
                 cp = None,
                 jvm_args = None
             )
