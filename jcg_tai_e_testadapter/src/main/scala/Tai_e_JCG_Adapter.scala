@@ -44,9 +44,9 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
 
             val command = List(
                 "java",
-                "-jar", taieJarPath.toString,
-                "--main-class", mainClass,
-                "-java", javaVersion.toString,
+                "-jar", taieJarPath.toString) ++
+                (if(mainClass != null) List("--main-class", mainClass) else List("--library", "exported")) ++
+                List("-java", javaVersion.toString,
                 "--jre-dir", if(jdkPath.endsWith("jre")) jdkPath.getParent.toString else jdkPath.toString,
                 "--class-path", cp.mkString(":"),
                 "-scope", "ALL",

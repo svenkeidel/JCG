@@ -334,11 +334,11 @@ public class ValueCG_TestAdapterImpl {
 		}
 		Path templatePath = Paths.get(configDir, templateFile);
 		String configContent = new String(Files.readAllBytes(templatePath)).replace("OUTPUT", outDir.toString());
-		if (inputFile.getName().toUpperCase().startsWith("LIB")) {
-			configContent += "\n\nJavaAnalyzer.ValueFinder.Static.CG.LibraryMode=true";
-		}
-		if (mainClass != null && mainClass != "") {
+
+		if (mainClass != null) {
 		    configContent += "\n\nJavaAnalyzer.EntryPoint=" + "<" + mainClass + ": void main(java.lang.String[])>";
+		} else {
+			configContent += "\n\nJavaAnalyzer.ValueFinder.Static.CG.LibraryMode=true";
 		}
 
 		Path serverConf = outDir.resolve("server.conf");
