@@ -1,7 +1,7 @@
 import java.io.*
 import java.nio.file.*
 import java.util.zip.GZIPOutputStream
-import play.api.libs.json.{JsValue, Json, Writes}
+import play.api.libs.json.{JsValue, Json, Writes, __}
 
 import java.nio.charset.StandardCharsets
 import scala.concurrent.Future
@@ -290,22 +290,19 @@ object Commandline {
                 val fileType = if(metric.contains("boundary")) "csv" else "json"
                 val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.$fileType.gz")
                 Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
-                    writer.write(
-                        (scope match {
-                            case "methods" =>
-                                classificationToString(precisionRecall.methods)(metric)
-                            case "edges" =>
-                                metric match
-                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edges.falsePositiveBoundary)
-                                    case "false-negative-boundary" => boundaryToCSV(precisionRecall.edges.falseNegativeBoundary)
-                                    case _                         => classificationToString(precisionRecall.edges)(metric)
-                            case "edges-with-line-numbers" =>
-                                metric match
-                                    case "false-positive-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary)
-                                    case "false-negative-boundary" => boundaryToCSV(precisionRecall.edgesWithCallSiteLineNumbers.falseNegativeBoundary)
-                                    case _                         => classificationToString(precisionRecall.edgesWithCallSiteLineNumbers)(metric)
-                        }).getBytes(StandardCharsets.UTF_8)
-                    )
+                    scope match {
+                        case "methods" => writeMetric(precisionRecall.methods, metric, writer)
+                        case "edges" =>
+                            metric match
+                                case "false-positive-boundary" => writeBoundary(precisionRecall.edges.falsePositiveBoundary, writer)
+                                case "false-negative-boundary" => writeBoundary(precisionRecall.edges.falseNegativeBoundary, writer)
+                                case _                         => writeMetric(precisionRecall.edges, metric, writer)
+                        case "edges-with-line-numbers" =>
+                            metric match
+                                case "false-positive-boundary" => writeBoundary(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary, writer)
+                                case "false-negative-boundary" => writeBoundary(precisionRecall.edgesWithCallSiteLineNumbers.falseNegativeBoundary, writer)
+                                case _                         => writeMetric(precisionRecall.edgesWithCallSiteLineNumbers, metric, writer)
+                    }
                 }
             }
         } catch {
@@ -315,21 +312,24 @@ object Commandline {
 
     ///////////////////////////// Helper Functions //////////////////////////////////////
 
-    private def classificationToString[T](classification: Classification[T]): String => String = {
-        case "true-positives"  => classification.truePositive.mkString("\n")
-        case "false-positives" => classification.falsePositive.mkString("\n")
-        case "false-negatives" => classification.falseNegative.mkString("\n")
-    }
+    private def writeMetric[T](classification: Classification[T], metric: String, writer: OutputStream): Unit =
+        val result = metric match
+            case "true-positives"  => classification.truePositive
+            case "false-positives" => classification.falsePositive
+            case "false-negatives" => classification.falseNegative
+        for(element <- result) {
+            writer.write((element.toString + "\n").getBytes(StandardCharsets.UTF_8))
+        }
 
-    private def boundaryToCSV(boundary: Map[Edge, TransitiveClosureSize]): String =
-        s"closure-methods|closure-edges|caller|declared-target|target\n" +
-            boundary
-                .view
-                .map((k, v) => (v, k))
-                .toArray
-                .sortBy((closureSize, edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
-                .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}${edge.line.map(line => ":" + line).getOrElse("")}|${edge.declaredTarget}|${edge.target}")
-                .mkString("\n")
+    private def writeBoundary(boundary: Map[Edge, TransitiveClosureSize], writer: OutputStream): Unit =
+        writer.write("closure-methods|closure-edges|caller|declared-target|target\n".getBytes(StandardCharsets.UTF_8))
+        boundary
+            .view
+            .map((k, v) => (v, k))
+            .toArray
+            .sortBy((closureSize, edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
+            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}${edge.line.map(line => ":" + line).getOrElse("")}|${edge.declaredTarget}|${edge.target}")
+            .foreach(line => writer.write(line.getBytes(StandardCharsets.UTF_8)))
 
     private def toJson[T : Writes](classification: Classification[T]): String => JsValue = {
         case "true-positives"  => Json.toJson(classification.truePositive)
