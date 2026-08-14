@@ -59,18 +59,16 @@ object Util {
             throw java.io.IOException(s"Cannot find call graphs files $uncompressCallGraphFile or $compressCallGraphFile")
     }
 
-
     def readJSON(callGraphPath: Path): JsValue = {
-        val bytes = Using(if (callGraphPath.getFileName.toString.endsWith(".gz"))
+        Using(
+            if (callGraphPath.getFileName.toString.endsWith(".gz"))
                 new GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))
             else
                 BufferedInputStream(FileInputStream(callGraphPath.toFile))
-        ) { input => input.readAllBytes()
-        }.get
-        if(bytes.isEmpty)
-            throw java.io.IOException(s"Call graph file $callGraphPath is empty")
-        else
-            Json.parse(bytes)
+        ) { input => Json.parse(input)
+        }.get match
+            case JsNull => throw java.io.IOException(s"Call graph file $callGraphPath is empty")
+            case json => json
     }
 
     def readReachableMethods(callGraphPath: Path): ReachableMethods = {
