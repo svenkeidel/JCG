@@ -224,10 +224,13 @@ object Commandline {
     def computePrecisionRecall(options: CommandlineOptions, projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
         try {
             val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
-            val predictedCallGraph = Util.readReachableMethods(predictedCallGraphPath).toMap
 
             val truthCallGraphsDirectory = options.truthCallGraphsDirectory.resolve("Dynamic", "Dynamic")
             val truthCallGraphPath = Util.findCallGraphFile(truthCallGraphsDirectory, testCase)
+
+            println(f"Compare $predictedCallGraphPath (${Files.size(predictedCallGraphPath) / (1024.0 * 1024.0)}%.2fmb) against $truthCallGraphPath (${Files.size(truthCallGraphPath) / (1024.0 * 1024.0)}%.2fmb)")
+
+            val predictedCallGraph = Util.readReachableMethods(predictedCallGraphPath).toMap
             val truthCallGraph = Util.readDynamicCallGraph(truthCallGraphPath)
 
             val precisionRecall = PrecisionRecall(
