@@ -331,7 +331,7 @@ object Commandline {
             .map((k, v) => (v, k))
             .toArray
             .sortBy((closureSize, edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
-            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}${edge.line.map(line => ":" + line).getOrElse("")}|${edge.declaredTarget}|${edge.target}")
+            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}${edge.line.map(line => ":" + line).getOrElse("")}|${edge.declaredTarget}|${edge.target}\n")
             .foreach(line => writer.write(line.getBytes(StandardCharsets.UTF_8)))
 
     private def toJson[T : Writes](classification: Classification[T]): String => JsValue = {
