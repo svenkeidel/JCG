@@ -13,7 +13,7 @@ import play.api.libs.json.Json
 object Tai_e_JCG_Adapter extends JavaTestAdapter {
     override val frameworkName: String = "Taie"
 
-    override val possibleAlgorithms: Array[String] = Array("CHA", "PTA")
+    override val possibleAlgorithms: Array[String] = Array("CHA", "0-CFA", "1-CFA", "1-CFA+HEAP", "1OBJ-CFA", "1OBJ-CFA+HEAP", "1TYP-CFA")
 
     override def serializeCG(
         algorithm: String,
@@ -32,27 +32,35 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
         val callGraphDirectory = Files.createTempDirectory("tai-e")
         try {
 
-            val algoTaieName = algorithm.toUpperCase match {
-                case "CHA" => "cha"
-                case "PTA" => "pta"
-                case _ => throw new RuntimeException("Invalid algorithm: " + algorithm)
-            }
+
 
             val taieJarPath = Paths.get("jcg_tai_e_testadapter", "src", "main", "resources", "tai-e-all-0.5.5-SNAPSHOT.jar").toAbsolutePath
 
             val cp = ArraySeq.ofRef(classPath).prepended(target)
 
+            val commonCallGraphOptions = "dump:true"
+            val callGraphOptions = algorithm.toUpperCase match {
+                case "CHA" => List("--analysis", "cg=algorithm:cha;"+commonCallGraphOptions)
+                case "0-CFA" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=cs:ci")
+                case "1-CFA" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=cs:1-call")
+                case "1-CFA+HEAP" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=cs:1-call-1h")
+                case "1OBJ-CFA" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=cs:1-obj")
+                case "1OBJ-CFA+HEAP" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=cs:1-obj-1h")
+                case "1TYP-CFA" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=cs:1-type")
+                case "1TYP-CFA+HEAP" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=pta;1-type-1h")
+                case _ => throw new RuntimeException("Invalid algorithm: " + algorithm)
+            }
             val command = List(
                 "java",
+                s"-Xmx${Runtime.getRuntime.maxMemory()}",
                 "-jar", taieJarPath.toString) ++
                 (if(mainClass != null) List("--main-class", mainClass) else List()) ++
                 List("-java", javaVersion.toString,
                 "--jre-dir", if(jdkPath.endsWith("jre")) jdkPath.getParent.toString else jdkPath.toString,
                 "--class-path", cp.mkString(":"),
                 "-scope", "ALL",
-                "-a", "cg=algorithm:" + algoTaieName + ";dump:true;dump-methods:true",
                 "--output-dir", callGraphDirectory.toString,
-            )
+            ) ++ callGraphOptions
             println(command.mkString(" "))
 
             val start = System.nanoTime()
