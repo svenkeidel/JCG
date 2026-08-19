@@ -56,7 +56,6 @@ object OpalJCGAdatper extends JavaTestAdapter {
         val JDKPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
-        val before = System.nanoTime()
         val baseConfig: Config = ConfigFactory.load().withValue(
             "org.opalj.br.reader.ClassFileReader.Invokedynamic.rewrite",
             ConfigValueFactory.fromAnyRef(true)
@@ -120,6 +119,8 @@ object OpalJCGAdatper extends JavaTestAdapter {
             case None               ⇒ Set(performInvocationsDomain)
             case Some(requirements) ⇒ requirements + performInvocationsDomain
         }*/
+
+        val before = System.nanoTime()
 
         implicit val ps: PropertyStore = project.get(PropertyStoreKey)
 

@@ -63,9 +63,7 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
             ) ++ callGraphOptions
             println(command.mkString(" "))
 
-            val start = System.nanoTime()
             val exitCode = new ProcessBuilder(command*).inheritIO().start().waitFor()
-            val end = System.nanoTime()
             if(exitCode != 0)
                 throw IllegalArgumentException(s"Exit code $exitCode not 0")
 
@@ -75,7 +73,7 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
 
             output.write(Json.prettyPrint(Json.toJson(edges)))
 
-            start - end
+            Files.readString(callGraphDirectory.resolve("timing.txt")).toLong
         } finally {
             FileUtils.deleteDirectory(callGraphDirectory.toFile)
         }

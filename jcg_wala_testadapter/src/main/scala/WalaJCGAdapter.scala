@@ -34,7 +34,6 @@ object WalaJCGAdapter extends JavaTestAdapter {
         val JDKPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
-        val before = System.nanoTime
         val cl = Thread.currentThread.getContextClassLoader
 
         var cp = util.Arrays.stream(classPath).collect(Collectors.joining(File.pathSeparator))
@@ -82,6 +81,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
         val cache = new AnalysisCacheImpl
 
+        val before = System.nanoTime
         val cg =
             if (algorithm.contains("0-CFA")) {
                 val ncfaBuilder = Util.makeZeroCFABuilder(JAVA, options, cache, classHierarchy)

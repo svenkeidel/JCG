@@ -68,7 +68,6 @@ object SootUpJCGAdapter extends JavaTestAdapter {
 
         // todo no-bodies-for-excluded in case of !analyzeJDK
 
-        val before = System.nanoTime
 
         def computeCG(cgAlgorithm: CallGraphAlgorithm): (CallGraph, Iterable[MethodSignature]) = {
             val cg =
@@ -83,6 +82,8 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             }
             (cg, cg.getEntryMethods.asScala)
         }
+
+        val before = System.nanoTime
 
         val (cg: CallGraph, entrypoints: Iterable[MethodSignature]) = algorithm match {
             case CHA => computeCG(new ClassHierarchyAnalysisAlgorithm(view))

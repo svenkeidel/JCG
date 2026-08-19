@@ -221,7 +221,6 @@ object DoopAdapter extends JavaTestAdapter {
             println(args.mkString(" "))
 
             val memoryMiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024,2)).round
-            val before = System.nanoTime()
             Process(
                 args,
                 Some(doopHome.toFile),
@@ -229,7 +228,6 @@ object DoopAdapter extends JavaTestAdapter {
                 "DOOP_OUT" -> outDir.toAbsolutePath.toString,
                 "DEFAULT_JVM_OPTS" -> s"\"-DmaxHeapSize=${memoryMiB}m\" \"-DstackSize=1000m\""
             ).!
-            val after = System.nanoTime()
 
             val database = Files.list(outDir).findFirst().get().resolve("database")
             val callGraphCsv = database.resolve("CallGraphEdge.csv")
@@ -242,7 +240,11 @@ object DoopAdapter extends JavaTestAdapter {
                 output
             )
 
-            after - before
+            val factsGenerationTime = Files.readString(database.resolve("facts-generation-time.txt")).toLong
+            val analysisExecutionTime = Files.readString(database.resolve("analysis-execution-time.txt")).toLong
+            val totalTime = factsGenerationTime + analysisExecutionTime
+
+            totalTime
         } finally {
             FileUtils.deleteDirectory(outDir.toFile)
         }
