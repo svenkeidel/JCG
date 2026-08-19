@@ -26,6 +26,7 @@ object DoopAdapter extends JavaTestAdapter {
 
     val possibleAlgorithms: Array[String] = Array(
         "0-CFA",
+        "0-CFA-REFLECTION",
         "1-CFA",
         "1-CFA+HEAP",
         "1OBJ-CFA",
@@ -56,14 +57,14 @@ object DoopAdapter extends JavaTestAdapter {
 
     private def algorithmToDoopAnalysis(algorithm: String): String =
         algorithm match {
-            case "0-CFA"              => "context-insensitive"
-            case "1-CFA"              => "1-call-site-sensitive"
-            case "1-CFA+HEAP"         => "1-call-site-sensitive+heap"
-            case "1OBJ-CFA"           => "1-object-sensitive"
-            case "1OBJ-CFA+HEAP"      => "1-object-sensitive+heap"
-            case "1TYP-CFA"           => "1-type-sensitive"
-            case "1TYP-CFA+HEAP"      => "1-type-sensitive+heap"
-            case "1OBJ-1TYP-CFA+HEAP" => "1-object-1-type-sensitive+heap"
+            case "0-CFA" | "0-CFA-REFLECTION" => "context-insensitive"
+            case "1-CFA"                      => "1-call-site-sensitive"
+            case "1-CFA+HEAP"                 => "1-call-site-sensitive+heap"
+            case "1OBJ-CFA"                   => "1-object-sensitive"
+            case "1OBJ-CFA+HEAP"              => "1-object-sensitive+heap"
+            case "1TYP-CFA"                   => "1-type-sensitive"
+            case "1TYP-CFA+HEAP"              => "1-type-sensitive+heap"
+            case "1OBJ-1TYP-CFA+HEAP"         => "1-object-1-type-sensitive+heap"
             case _ => throw IllegalArgumentException(s"Unknown call graph algorithm $algorithm")
         }
 
@@ -203,12 +204,14 @@ object DoopAdapter extends JavaTestAdapter {
 
             var args = Array(
                 "./bin/doop",
-                "--analysis", algorithmToDoopAnalysis(algorithm),
-//                "--reflection",
+                "--analysis", algorithmToDoopAnalysis(algorithm))
+                ++ (if (algorithm.contains("REFLECTION")) Array("--reflection") else Array.empty[String])
+                ++ Array(
                 "--timeout", "1440",
                 "--platform", s"java_$javaVersion",
                 "--use-local-java-platform", JDKPath.toAbsolutePath.toString,
-                "-i", inputDirPath) ++ classPath
+                "-i", inputDirPath)
+                ++ classPath
 
             if (analyzeJDK) {
                args ++= JRELocation.getAllJREJars(JDKPath).map(_.toString)
