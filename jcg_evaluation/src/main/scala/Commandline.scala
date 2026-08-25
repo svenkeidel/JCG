@@ -64,53 +64,60 @@ object Commandline {
             if(options.compress)
                 callGraphsDirectory.resolve(s"$testCase-callgraph.csv.gz")
             else
-                callGraphsDirectory.resolve(s"$testCase-callgraph.gz")
+                callGraphsDirectory.resolve(s"$testCase-callgraph.csv")
+
+        val logFilePath =
+            if(options.compress)
+                callGraphsDirectory.resolve(s"$testCase-log.txt.gz")
+            else
+                callGraphsDirectory.resolve(s"$testCase-log.txt")
 
         if(! options.overwriteCallgraph && Files.exists(callGraphPath))
             println(s"Call graph file $callGraphPath exists. Do not run analysis.")
         else {
             Using(makeCallGraphWriter(callGraphPath)) { callGraphWriter =>
+                redirectedStdoutToLogfile(logFilePath) {
+                    println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
 
-                println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
-
-                val future = Future {
-                    try {
-                        adapter.serializeCG(
-                            cgAlgo,
-                            projectSpec.target(options.projectsDir.toFile).getCanonicalPath,
-                            callGraphWriter,
-                            AdapterOptions.makeJavaOptions(
-                                testCase,
-                                callGraphsDirectory,
-                                projectSpec.main.orNull,
-                                projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
-                                projectSpec.java,
-                                jreLocations(projectSpec.java),
-                                target = projectSpec.target(options.projectsDir.toFile).toString,
-                                jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
-                                analyzeJDK = options.analyzeJdk,
-                                analysisArguments = options.analysisArgs.split(" ")
+                    val future = Future {
+                        try {
+                            adapter.serializeCG(
+                                cgAlgo,
+                                projectSpec.target(options.projectsDir.toFile).getCanonicalPath,
+                                callGraphWriter,
+                                AdapterOptions.makeJavaOptions(
+                                    testCase,
+                                    callGraphsDirectory,
+                                    projectSpec.main.orNull,
+                                    projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
+                                    projectSpec.java,
+                                    jreLocations(projectSpec.java),
+                                    target = projectSpec.target(options.projectsDir.toFile).toString,
+                                    jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
+                                    analyzeJDK = options.analyzeJdk,
+                                    analysisArguments = options.analysisArgs.split(" ")
+                                )
                             )
-                        )
-                    } catch {
-                        case e: Throwable =>
-                            println(s"exception in project ${projectSpec.name}")
-                            e.printStackTrace()
-                            -1
+                        } catch {
+                            case e: Throwable =>
+                                println(s"exception in project ${projectSpec.name}")
+                                e.printStackTrace()
+                                -1
+                        }
                     }
-                }
 
-                try {
-                    val elapsed = tryAwait(options.timeout, future)
-                    reportTiming(callGraphsDirectory, testCase, elapsed)
-                } catch {
-                    case _: TimeoutException =>
-                        println(s"Timeout after ${options.timeout} seconds")
-                        val result = Timeout
-                        reportTiming(callGraphsDirectory, testCase, -1)
-                    case e: Throwable => println(e.getMessage)
-                } finally {
-                    System.gc()
+                    try {
+                        val elapsed = tryAwait(options.timeout, future)
+                        reportTiming(callGraphsDirectory, testCase, elapsed)
+                    } catch {
+                        case _: TimeoutException =>
+                            println(s"Timeout after ${options.timeout} seconds")
+                            val result = Timeout
+                            reportTiming(callGraphsDirectory, testCase, -1)
+                        case e: Throwable => println(e.getMessage)
+                    } finally {
+                        System.gc()
+                    }
                 }
             }.get
         }
@@ -216,7 +223,7 @@ object Commandline {
                 packageScope = options.comparisonScope match
                     case ComparisonScope.All => Regex(".*")
                     case ComparisonScope.Package => projectSpec.compare_package match
-                        case Some(pkg) => Regex(s"$pkg.*")
+                        case Some(pkg) => Regex(s"$pkg")
                         case None => Regex(".*"),
                 reachableMethodsInclude = options.reachableMethodsInclude,
                 edgeInclude = options.edgesInclude,
@@ -399,6 +406,48 @@ object Commandline {
             OutputStreamWriter(GZIPOutputStream(BufferedOutputStream(FileOutputStream(callGraphPath.toFile))))
         } else {
             OutputStreamWriter(BufferedOutputStream(FileOutputStream(callGraphPath.toFile)))
+        }
+    }
+
+    protected def redirectedStdoutToLogfile(logFilePath: Path)(run: => Unit): Unit = {
+        val consoleOut = System.out
+        val consoleErr = System.err
+
+        val fileOut = {
+            if(logFilePath.toString.endsWith(".gz"))
+                GZIPOutputStream(BufferedOutputStream(FileOutputStream(logFilePath.toFile, true)))
+            else
+                FileOutputStream(logFilePath.toFile, true)
+        }
+
+        val dualStream = PrintStream(new OutputStream() {
+            @throws[java.io.IOException]
+            override def write(b: Int): Unit = {
+                consoleOut.write(b) // Write to console
+                fileOut.write(b) // Write to file
+            }
+
+            @throws[java.io.IOException]
+            override def write(b: Array[Byte], off: Int, len: Int): Unit = {
+                consoleOut.write(b, off, len)
+                fileOut.write(b, off, len)
+            }
+
+            @throws[java.io.IOException]
+            override def flush(): Unit = {
+                consoleOut.flush
+                fileOut.flush
+            }
+        }, true)
+
+        try {
+            System.setOut(dualStream)
+            System.setErr(dualStream)
+            run
+        } finally {
+            fileOut.close()
+            System.setOut(consoleOut)
+            System.setErr(consoleErr)
         }
     }
 }
