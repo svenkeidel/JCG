@@ -164,18 +164,22 @@ object OpalJCGAdatper extends JavaTestAdapter {
             val target = opalMethodToJCGMethod(tgt.method)
 
             val defaultDeclaredTarget = Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
-            val declaredTarget = tgt.method.definedMethod.body match {
-                case Some(body) => body.instructions.lift(pc) match {
-                    case Some(MethodInvocationInstruction(dc, _, name, desc)) =>
-                        Method(
-                            declaringClass = dc.toJava,
-                            name = name,
-                            returnType = desc.returnType.toJava,
-                            parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](_.toJava))
-                        )
-                    case _ => defaultDeclaredTarget
+            val declaredTarget = try {
+                tgt.method.definedMethod.body match {
+                    case Some(body) => body.instructions.lift(pc) match {
+                        case Some(MethodInvocationInstruction(dc, _, name, desc)) =>
+                            Method(
+                                declaringClass = dc.toJava,
+                                name = name,
+                                returnType = desc.returnType.toJava,
+                                parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](_.toJava))
+                            )
+                        case _ => defaultDeclaredTarget
+                    }
+                    case None => defaultDeclaredTarget
                 }
-                case None => defaultDeclaredTarget
+            } catch {
+                case exc: Exception => defaultDeclaredTarget
             }
 
             val callSite = CallSite(
