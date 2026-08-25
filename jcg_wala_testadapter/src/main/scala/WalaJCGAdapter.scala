@@ -118,12 +118,12 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
             val pc = callSiteWala.getProgramCounter
 
-            val line =
-                try {
-                    callerWala.getMethod.getLineNumber(pc)
-                } catch {
-                    case _: ArrayIndexOutOfBoundsException ⇒ -1
-                }
+            val line = pc+1
+//                try {
+//                    callerWala.getMethod.getLineNumber(pc)
+//                } catch {
+//                    case _: ArrayIndexOutOfBoundsException ⇒ -1
+//                }
 
             val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = Some(pc))
 
