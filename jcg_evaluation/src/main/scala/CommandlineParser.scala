@@ -12,6 +12,7 @@ enum Action:
     case PrecisionRecall
     case JDKCallbacks
     case ConvertDynamicCallGraphToCSV
+    case DynamicStackTraces
 
 enum ComparisonScope:
     case All
@@ -44,6 +45,8 @@ case class CommandlineOptions(
                                  withCallSiteLineNumber:    Boolean = false,
                                  falsePositiveClosureSize:  Boolean = false,
                                  falseNegativeClosureSize:  Boolean = false,
+
+                                 searchedMethods:      List[Method] = List()
 ) {
     val JRE_LOCATIONS_FILE = "jre.conf"
     val SERIALIZATION_FILE_NAME = "cg.json.gz"
@@ -161,7 +164,24 @@ object CommandlineParser {
                     adapters = List(DynamicJCGAdapter),
                     algorithmFilter = "Dynamic"
                 ))
-                .text("add declared method call targets to dynamic call graph"),
+                .text("converts dynamic call graph to CSV format."),
+
+            cmd("dynamic-stack-traces")
+                .action((_,c) => c.copy(
+                    action = Action.DynamicStackTraces,
+                    adapters = List(DynamicJCGAdapter),
+                    algorithmFilter = "Dynamic"
+                ))
+                .text("returns all stack traces that end in the given method.")
+                .children(
+                    opt[String]("method")
+                        .action((methodString, c) => c.copy(searchedMethods = Method.fromString(methodString) +: c.searchedMethods))
+                        .validate { methodString =>
+                            try { Method.fromString(methodString); success }
+                            catch { case exc: Exception => failure(s"Cannot parse method $methodString.") }
+                        }
+                        .required()
+                ),
 
             cmd("assess")
                 .action((_,c) => c.copy(action = Action.Assess))

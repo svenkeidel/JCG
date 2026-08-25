@@ -215,6 +215,24 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
     case class CallSite(method: Method, line: Int, pc: Int, declaredTarget: Option[Method])
     case class CallTree(callSites: Map[CallSite, CallTree]):
+        def stackTraces(searchedMethod: Method): Set[List[CallSite]] = {
+            val stackTracesSet = mutable.Set.empty[List[CallSite]]
+            this.stackTraces(List(), searchedMethod, stackTracesSet)
+            stackTracesSet.toSet
+        }
+
+        private def stackTraces(parentTrace: List[CallSite], searchedMethod: Method, stackTraces: mutable.Set[List[CallSite]]): Unit =
+            for((callSite, subTree) <- callSites) {
+                if(callSite.method == searchedMethod)
+                    stackTraces += callSite.copy(line = -1, pc = -1, declaredTarget = None) +: parentTrace
+
+                subTree.stackTraces(callSite +: parentTrace, searchedMethod, stackTraces)
+            }
+
+
+        def callersOf(callee: Method): Set[CallSite] =
+            stackTraces(callee).flatMap(stackTrace => stackTrace.lift(1))
+
         def toReachableMethods: ReachableMethods =
             val reachableMethods = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
             addReachableMethods(reachableMethods)

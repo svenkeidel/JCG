@@ -54,6 +54,7 @@ object Commandline {
                     case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
                     case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, callGraphsDirectory, testCase)
                     case Action.ConvertDynamicCallGraphToCSV => convertDynamicCallGraphToCSV(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
+                    case Action.DynamicStackTraces => dynamicStackTraces(options, callGraphsDirectory, testCase)
             }
 
         }
@@ -134,6 +135,23 @@ object Commandline {
         Using(OutputStreamWriter(GZIPOutputStream(BufferedOutputStream(FileOutputStream(dynamicCallGraphCSVPath.toFile))))) { writer =>
             updatedCallGraph.deserialize.toReachableMethods.writeCsv(writer)
         }.get
+    }
+
+    private def dynamicStackTraces(options: CommandlineOptions, callGraphsDirectory: Path, testCase: String): Unit = {
+        val dynamicCallGraphJSONPath = callGraphsDirectory.resolve(s"$testCase-callgraph.json.gz")
+        val dynamicCallGraphSerialized = Util.readJSON(dynamicCallGraphJSONPath).validate[DynamicJCGAdapter.CallGraphSerialized].get
+        val dynamicCallGraphDeserialized = dynamicCallGraphSerialized.jvmToJavaTypes.deserialize
+
+        for(method <- options.searchedMethods) {
+            println(s"========== stack traces for $method ==========")
+
+            for(stackTrace <- dynamicCallGraphDeserialized.stackTraces(method)) {
+                println(stackTrace.reverse.map(callSite => callSite.method.toString + ": " + callSite.line).mkString("\n"))
+                print("\n")
+            }
+
+            print("\n\n")
+        }
     }
 
     private def assessCallGraph(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
