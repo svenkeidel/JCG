@@ -36,48 +36,58 @@ object Commandline {
                 .sorted
                 .toScala(List)
 
-        for {
-            adapter <- options.adapters
-            cgAlgo <- adapter.possibleAlgorithms.filter(_.toLowerCase().startsWith(options.algorithmFilter.toLowerCase()))
-        } {
-            val callGraphsDirectory = options.callGraphsDir.resolve(adapter.frameworkName, cgAlgo)
-            Files.createDirectories(callGraphsDirectory)
+        val consoleOut = System.out
+        val consoleErr = System.err
+        val teeOutputStream = TeeOutputStream(System.out, List())
+        val teePrintStream = PrintStream(teeOutputStream)
 
-            for (projectSpecPath <- projectSpecPaths) {
+        try {
+            System.setOut(teePrintStream)
+            System.setErr(teePrintStream)
 
-                val projectSpec = Json.parse(new FileInputStream(projectSpecPath.toFile)).validate[ProjectSpecification].get
-                val testCase = projectSpecPath.getFileName.toString.stripSuffix(".conf")
+            for {
+                adapter <- options.adapters
+                cgAlgo <- adapter.possibleAlgorithms.filter(_.toLowerCase().startsWith(options.algorithmFilter.toLowerCase()))
+            } {
+                val callGraphsDirectory = options.callGraphsDir.resolve(adapter.frameworkName, cgAlgo)
+                Files.createDirectories(callGraphsDirectory)
 
-                options.action match
-                    case Action.Analyze => runAnalysis(options, jreLocations, projectSpec, adapter, cgAlgo, callGraphsDirectory, testCase)
-                    case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
-                    case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
-                    case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, callGraphsDirectory, testCase)
-                    case Action.ConvertDynamicCallGraphToCSV => convertDynamicCallGraphToCSV(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
-                    case Action.DynamicStackTraces => dynamicStackTraces(options, callGraphsDirectory, testCase)
+                for (projectSpecPath <- projectSpecPaths) {
+
+                    val projectSpec = Json.parse(new FileInputStream(projectSpecPath.toFile)).validate[ProjectSpecification].get
+                    val testCase = projectSpecPath.getFileName.toString.stripSuffix(".conf")
+
+                    options.action match
+                        case Action.Analyze => runAnalysis(options, jreLocations, projectSpec, adapter, cgAlgo, callGraphsDirectory, testCase, teeOutputStream)
+                        case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
+                        case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
+                        case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, callGraphsDirectory, testCase)
+                        case Action.ConvertDynamicCallGraphToCSV => convertDynamicCallGraphToCSV(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
+                        case Action.DynamicStackTraces => dynamicStackTraces(options, callGraphsDirectory, testCase)
+                }
+
             }
-
+        } finally {
+            System.setOut(consoleOut)
+            System.setErr(consoleErr)
         }
+
     }
 
-    private def runAnalysis(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, adapter: TestAdapter, cgAlgo: String, callGraphsDirectory: Path, testCase: String): Any = {
+    private def runAnalysis(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, adapter: TestAdapter, cgAlgo: String, callGraphsDirectory: Path, testCase: String, teeOutputStream: TeeOutputStream): Any = {
         val callGraphPath =
             if(options.compress)
                 callGraphsDirectory.resolve(s"$testCase-callgraph.csv.gz")
             else
                 callGraphsDirectory.resolve(s"$testCase-callgraph.csv")
 
-        val logFilePath =
-            if(options.compress)
-                callGraphsDirectory.resolve(s"$testCase-log.txt.gz")
-            else
-                callGraphsDirectory.resolve(s"$testCase-log.txt")
+        val logFilePath = callGraphsDirectory.resolve(s"$testCase-log.txt")
 
         if(! options.overwriteCallgraph && Files.exists(callGraphPath))
             println(s"Call graph file $callGraphPath exists. Do not run analysis.")
         else {
             Using(makeCallGraphWriter(callGraphPath)) { callGraphWriter =>
-                redirectedStdoutToLogfile(logFilePath) {
+                redirectedStdoutToLogfile(logFilePath, teeOutputStream) {
                     println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
 
                     val future = Future {
@@ -427,45 +437,41 @@ object Commandline {
         }
     }
 
-    protected def redirectedStdoutToLogfile(logFilePath: Path)(run: => Unit): Unit = {
-        val consoleOut = System.out
-        val consoleErr = System.err
 
-        val fileOut = {
-            if(logFilePath.toString.endsWith(".gz"))
-                GZIPOutputStream(BufferedOutputStream(FileOutputStream(logFilePath.toFile, true)))
-            else
-                FileOutputStream(logFilePath.toFile, true)
+    class TeeOutputStream(val consoleOut: PrintStream, var targets: List[OutputStream]) extends OutputStream {
+        override def write(b: Int): Unit = {
+            for (t <- consoleOut +: targets) {
+                t.write(b)
+            }
         }
 
-        val dualStream = PrintStream(new OutputStream() {
-            @throws[java.io.IOException]
-            override def write(b: Int): Unit = {
-                consoleOut.write(b) // Write to console
-                fileOut.write(b) // Write to file
+        override def write(b: Array[Byte], off: Int, len: Int): Unit = {
+            for (t <- consoleOut +: targets) {
+                t.write(b, off, len)
             }
+        }
 
-            @throws[java.io.IOException]
-            override def write(b: Array[Byte], off: Int, len: Int): Unit = {
-                consoleOut.write(b, off, len)
-                fileOut.write(b, off, len)
+        @throws[IOException]
+        override def flush(): Unit = {
+            for (t <- consoleOut +: targets) {
+                t.flush
             }
+        }
 
-            @throws[java.io.IOException]
-            override def flush(): Unit = {
-                consoleOut.flush
-                fileOut.flush
-            }
-        }, true)
+        @throws[IOException]
+        override def close(): Unit = {
+            // TeeOutputStream does not own any of the streams. Nothing to close.
+        }
+    }
 
+    protected def redirectedStdoutToLogfile(logFilePath: Path, teeOutputStream: TeeOutputStream)(run: => Unit): Unit = {
+        val logOutputStream = BufferedOutputStream(FileOutputStream(logFilePath.toFile))
         try {
-            System.setOut(dualStream)
-            System.setErr(dualStream)
+            teeOutputStream.targets = List(logOutputStream)
             run
         } finally {
-            fileOut.close()
-            System.setOut(consoleOut)
-            System.setErr(consoleErr)
+            teeOutputStream.targets = List()
+            logOutputStream.close()
         }
     }
 }
