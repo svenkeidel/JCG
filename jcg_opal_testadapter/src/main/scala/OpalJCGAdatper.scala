@@ -32,6 +32,8 @@ import org.opalj.br.fpcf.properties.cg.NoCallees
 import org.opalj.br.fpcf.properties.cg.NoCalleesDueToNotReachableMethod
 
 import java.nio.file.Paths
+import scala.collection.immutable.ArraySeq
+import scala.collection.mutable
 
 /**
  * A [[JavaTestAdapter]] for the FPCF-based call graph analyses of OPAL.
@@ -43,7 +45,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
     val possibleAlgorithms: Array[String] = Array[String]("CHA", "RTA", "MTA", "CTA", "FTA", "XTA", "0-CFA", "0-1-CFA", "1-0-CFA", "1-1-CFA")
 
-    val frameworkName: String = "OPAL"
+    val frameworkName: String = "Opal"
 
     def serializeCG(
         algorithm:      String,
@@ -145,140 +147,60 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
         val after = System.nanoTime()
 
-        output.write(s"""{\n\t"reachableMethods":[""")
-        var firstRM = true
+        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+
         for {
-            dm ← declaredMethods.declaredMethods if (!dm.hasSingleDefinedMethod && !dm.hasMultipleDefinedMethods) ||
-                (dm.hasSingleDefinedMethod && dm.definedMethod.classFile.thisType == dm.declaringClassType)
-            calleeEOptP = ps(dm, Callees.key)
-            if calleeEOptP.ub ne NoCalleesDueToNotReachableMethod
+            callerOpal <- declaredMethods.declaredMethods
+            callees =  ps(callerOpal, Callees.key) match {
+               case FinalEP(_, callees: Callees) => callees
+               case _ => throw new RuntimeException()
+            }
+            callerContext <- callees.callerContexts
+            (pc, targets) <- callees.callSites(callerContext)
+            tgt <- targets
         } {
-            if (firstRM) {
-                firstRM = false
-            } else {
-                output.write(",")
+            val caller = opalMethodToJCGMethod(callerOpal)
+
+            val target = opalMethodToJCGMethod(tgt.method)
+
+            val defaultDeclaredTarget = Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
+            val declaredTarget = tgt.method.definedMethod.body match {
+                case Some(body) => body.instructions.lift(pc) match {
+                    case Some(MethodInvocationInstruction(dc, _, name, desc)) =>
+                        Method(
+                            declaringClass = dc.toJava,
+                            name = name,
+                            returnType = desc.returnType.toJava,
+                            parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](_.toJava))
+                        )
+                    case _ => defaultDeclaredTarget
+                }
+                case None => defaultDeclaredTarget
             }
-            output.write("{\n\t\t\"method\":")
-            writeMethodObject(dm, output)
-            output.write(",\n\t\t\"callSites\":[")
-            calleeEOptP match {
-                case FinalEP(_, NoCallees) ⇒
-                case FinalEP(_, callees: Callees) ⇒
-                    writeCallSites(dm, callees, output)
-                case _ ⇒ throw new RuntimeException()
-            }
-            output.write("]\n\t}")
+
+            val callSite = CallSite(
+                declaredTarget = declaredTarget,
+                line = pc + 1,
+                pc = Some(pc)
+            )
+
+            val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
+            val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
+            targets += target
         }
-        output.write("]\n}")
+
+        ReachableMethods(callGraph).writeCsv(output)
 
         ps.shutdown()
 
         after - before
     }
 
-    private def writeCallSites(
-        method:  DeclaredMethod,
-        callees: Callees,
-        out:     Writer
-    )(implicit ps: PropertyStore, declaredMethods: DeclaredMethods, typeIterator: TypeIterator): Unit = {
-        val bodyO = if (method.hasSingleDefinedMethod) method.definedMethod.body else None
-        var first = true
-        for { callerContext ← callees.callerContexts
-            (pc, targets) ← callees.callSites(callerContext)
-        } {
-            bodyO match {
-                case None ⇒
-                    for (tgt ← targets) {
-                        if (first) first = false
-                        else out.write(",")
-                        writeCallSite(tgt.method, -1, pc, Iterator(tgt.method), out)
-                    }
-
-                case Some(body) ⇒
-                    val declaredTgtO = body.instructions(pc) match {
-                        case MethodInvocationInstruction(dc, _, name, desc) ⇒ Some(dc, name, desc)
-                        case _                                              ⇒ None
-                    }
-
-                    val line = body.lineNumber(pc).getOrElse(-1)
-
-                    if (declaredTgtO.isDefined) {
-                        val (dc, name, desc) = declaredTgtO.get
-                        val declaredType =
-                            if (dc.isArrayType)
-                                ClassType.Object
-                            else
-                                dc.asClassType
-
-                        val declaredTarget = declaredMethods(
-                            declaredType, declaredType.packageName, declaredType, name, desc
-                        )
-
-                        val (directCallees, indirectCallees) = targets.partition { callee ⇒
-                            callee.method.name == name && // TODO check descriptor correctly for refinement
-                                callee.method.descriptor.parametersCount == desc.parametersCount
-                        }
-
-                        for (tgt ← indirectCallees) {
-                            if (first) first = false
-                            else out.write(",")
-                            writeCallSite(tgt.method, line, pc, Iterator(tgt.method), out)
-                        }
-                        if (directCallees.nonEmpty) {
-                            if (first) first = false
-                            else out.write(",")
-                            writeCallSite(declaredTarget, line, pc, directCallees.map(_.method), out)
-                        }
-
-                    } else {
-                        for (tgt ← targets) {
-                            if (first) first = false
-                            else out.write(",")
-                            writeCallSite(tgt.method, line, pc, Iterator(tgt.method), out)
-                        }
-                    }
-            }
-        }
-    }
-
-    private def writeCallSite(
-        declaredTarget: DeclaredMethod,
-        line:           Int,
-        pc:             Int,
-        targets:        Iterator[DeclaredMethod],
-        out:            Writer
-    ): Unit = {
-        out.write("{\n\t\t\t\"declaredTarget\":")
-        writeMethodObject(declaredTarget, out)
-        out.write(",\n\t\t\t\"line\":")
-        out.write(line.toString)
-        out.write(",\n\t\t\t\"pc\":")
-        out.write(pc.toString)
-        out.write(",\n\t\t\t\"targets\":[")
-        var first = true
-        for (tgt ← targets) {
-            if (first) first = false
-            else out.write(",")
-            writeMethodObject(tgt, out)
-        }
-        out.write("]\n\t\t}")
-    }
-
-    private def writeMethodObject(
-        method: DeclaredMethod,
-        out:    Writer
-    ): Unit = {
-        out.write("{\n\t\t\t\t\"name\":\"")
-        out.write(method.name)
-        out.write("\",\n\t\t\t\t\"declaringClass\":\"")
-        out.write(method.declaringClassType.toJVMTypeName)
-        out.write("\",\n\t\t\t\t\"returnType\":\"")
-        out.write(method.descriptor.returnType.toJVMTypeName)
-        out.write("\",\n\t\t\t\t\"parameterTypes\":[")
-        if (method.descriptor.parametersCount > 0)
-            out.write(method.descriptor.parameterTypes.iterator.map[String](_.toJVMTypeName).mkString("\"", "\",\"", "\""))
-        out.write("]\n\t\t\t}")
-    }
-
-
+    private def opalMethodToJCGMethod(method: DeclaredMethod): Method =
+        Method(
+            declaringClass = method.declaringClassType.toJava,
+            name = method.name,
+            returnType = method.descriptor.returnType.toJava,
+            parameterTypes = ArraySeq.from(method.descriptor.parameterTypes.iterator.map[String](_.toJava))
+        )
 }

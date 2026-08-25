@@ -1,10 +1,11 @@
 import com.fasterxml.jackson.core.{JsonFactory, StreamReadConstraints, StreamWriteConstraints}
 
-import java.io.{BufferedInputStream, File, FileInputStream, OutputStream, Writer}
+import java.io.*
 import java.nio.file.*
 import java.util.zip.GZIPInputStream
 import play.api.libs.json.*
 
+import java.nio.charset.StandardCharsets
 import scala.util.{Try, Using}
 
 object Util {
@@ -49,8 +50,8 @@ object Util {
     }
 
     def findCallGraphFile(callGraphDirectory: Path, testCase: String): Path = {
-        val uncompressCallGraphFile = callGraphDirectory.resolve(s"$testCase-callgraph.json")
-        val compressCallGraphFile = callGraphDirectory.resolve(s"$testCase-callgraph.json.gz")
+        val uncompressCallGraphFile = callGraphDirectory.resolve(s"$testCase-callgraph.csv")
+        val compressCallGraphFile = callGraphDirectory.resolve(s"$testCase-callgraph.csv.gz")
         if(Files.exists(uncompressCallGraphFile))
             uncompressCallGraphFile
         else if(Files.exists(compressCallGraphFile))
@@ -71,13 +72,16 @@ object Util {
             case json => json
     }
 
+
     def readReachableMethods(callGraphPath: Path): ReachableMethods = {
-        val json = readJSON(callGraphPath)
-        if(callGraphPath.toString.contains("Dynamic")) {
-            json.validate[DynamicJCGAdapter.CallTree].get.toReachableMethods
-        } else {
-            json.validate[ReachableMethods].get
-        }
+        Using(
+            if (callGraphPath.getFileName.toString.endsWith(".gz"))
+                GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))
+            else
+                BufferedInputStream(FileInputStream(callGraphPath.toFile))
+        ) { input =>
+            ReachableMethods.readCsv(BufferedReader(InputStreamReader(input, StandardCharsets.UTF_8)))
+        }.get
     }
 
     def readDynamicCallGraph(callGraphPath: Path): DynamicJCGAdapter.CallTree = {

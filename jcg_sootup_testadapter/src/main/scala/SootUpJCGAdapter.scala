@@ -29,6 +29,7 @@ import sootup.java.bytecode.frontend.inputlocation.*
 import sootup.java.core.views.JavaView
 
 import java.nio.file.{Files, Paths}
+import scala.collection.compat.immutable.ArraySeq
 
 object SootUpJCGAdapter extends JavaTestAdapter {
 
@@ -68,8 +69,7 @@ object SootUpJCGAdapter extends JavaTestAdapter {
 
         // todo no-bodies-for-excluded in case of !analyzeJDK
 
-
-        def computeCG(cgAlgorithm: CallGraphAlgorithm): (CallGraph, Iterable[MethodSignature]) = {
+        def computeCG(cgAlgorithm: CallGraphAlgorithm): CallGraph = {
             val cg =
                 if (mainClass == null) {
                 cgAlgorithm.initialize()
@@ -80,95 +80,59 @@ object SootUpJCGAdapter extends JavaTestAdapter {
                 val mainMethod = idFactory.getMethodSignature(mainClassType, "main", VoidType.getInstance(), List(stringArrayType).asJava)
                 cgAlgorithm.initialize(List(mainMethod).asJava)
             }
-            (cg, cg.getEntryMethods.asScala)
+            cg
         }
 
         val before = System.nanoTime
-
-        val (cg: CallGraph, entrypoints: Iterable[MethodSignature]) = algorithm match {
+        val sootUpCallGraph: CallGraph = algorithm match {
             case CHA => computeCG(new ClassHierarchyAnalysisAlgorithm(view))
             case RTA => computeCG(new RapidTypeAnalysisAlgorithm(view))
         }
-
         val after = System.nanoTime
 
-        val worklist = mutable.Queue(entrypoints.toSeq*)
-        val processed = mutable.Set(worklist.toSeq*)
+        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-        var reachableMethods = Set.empty[ReachableMethod]
+        for(sootUpCaller <- sootUpCallGraph.getMethodSignatures.asScala;
+            caller = sootMethodToJCGMethod(sootUpCaller);
+            call <- sootUpCallGraph.callsFrom(sootUpCaller).asScala
+        ) {
+            val stmt = call.getInvokableStmt
 
-        while (worklist.nonEmpty) {
-            val currentMethod = worklist.dequeue()
+            // e.g. null for finalize and no invoke for static initializers
+            val declaredTarget = if (stmt != null && stmt.containsInvokeExpr()) {
+                stmt.getInvokeExpr.get().getMethodSignature
+            } else
+                call.getTargetMethodSignature
 
-            var callSitesMap = Map.empty[(MethodSignature, Int), Set[MethodSignature]]
-            for (edge ← cg.callsFrom(currentMethod).asScala) {
-                val stmt = edge.getInvokableStmt
+            val lineNumber =
+                if (stmt != null)
+                    stmt.getPositionInfo.getStmtPosition.getFirstLine
+                else
+                    -1
 
-                // e.g. null for finalize and no invoke for static initializers
-                val declaredMethod = if (stmt != null && stmt.containsInvokeExpr()) {
-                    stmt.getInvokeExpr.get().getMethodSignature
-                } else
-                    edge.getTargetMethodSignature
+            val callSite = CallSite(
+                declaredTarget = sootMethodToJCGMethod(declaredTarget),
+                line = lineNumber,
+                pc = None
+            )
 
-                val lineNumber =
-                    if (stmt != null)
-                        stmt.getPositionInfo.getStmtPosition.getFirstLine
-                    else
-                        -1
+            val target = sootMethodToJCGMethod(call.getTargetMethodSignature)
 
-                val tgt = edge.getTargetMethodSignature
-                val key =
-                    if (declaredMethod.getName == tgt.getName)
-                        declaredMethod → lineNumber
-                    else
-                        tgt → lineNumber
-
-                val tgts = callSitesMap.getOrElse(key, Set.empty)
-                callSitesMap = callSitesMap.updated(key, tgts + tgt)
-                if (!processed.contains(tgt)) {
-                    worklist += tgt
-                    processed += tgt
-                }
-            }
-
-            val callSites = callSitesMap.map {
-                case ((declaredTgt, line), tgts) ⇒
-                    // todo: would be good to have the PC
-                    CallSite(createMethodObject(declaredTgt), line, None, tgts.map(createMethodObject))
-            }.toSet
-
-            val method = createMethodObject(currentMethod)
-            reachableMethods += ReachableMethod(method, callSites)
+            val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
+            val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
+            targets += target
         }
 
-        output.write(Json.stringify(Json.toJson(ReachableMethods(reachableMethods))))
+        ReachableMethods(jcgCallGraph).writeCsv(output)
 
         after - before
     }
 
-    private def createMethodObject(method: MethodSignature): Method = {
+    private def sootMethodToJCGMethod(method: MethodSignature): Method = {
         val name = method.getName
-        val declaringClass = javaToJVMType(method.getDeclClassType)
-        val returnType = javaToJVMType(method.getType)
-        val paramTypes = method.getParameterTypes.asScala.map(t => javaToJVMType(t)).toList
-
-        Method(name, declaringClass, returnType, paramTypes)
-    }
-
-    private def javaToJVMType(javaType: Type): String = {
-        javaType match {
-            case t: ClassType => "L" + t.getFullyQualifiedName.replace('.', '/') + ";"
-            case t: ArrayType => "[" * t.getDimension + javaToJVMType(t.getBaseType)
-            case _: ByteType => "B"
-            case _: CharType => "C"
-            case _: DoubleType => "D"
-            case _: FloatType => "F"
-            case _: ShortType => "S"
-            case _: BooleanType => "Z"
-            case _: IntType => "I"
-            case _: LongType => "J"
-            case _: VoidType => "V"
-            case _   => throw new IllegalArgumentException(s"Unknow type $javaType")
-        }
+        val declaringClass = method.getDeclClassType.toString
+        val returnType = method.getType.toString
+        val paramTypes = method.getParameterTypes.asScala.map(t => t.toString)
+        Method(name = name, declaringClass = declaringClass, returnType = returnType, parameterTypes = ArraySeq.from(paramTypes))
     }
 }

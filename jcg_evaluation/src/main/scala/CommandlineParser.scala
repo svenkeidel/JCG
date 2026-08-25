@@ -11,7 +11,7 @@ enum Action:
     case Size
     case PrecisionRecall
     case JDKCallbacks
-    case DynamicCallGraphAddDeclaredTargets
+    case ConvertDynamicCallGraphToCSV
 
 enum ComparisonScope:
     case All
@@ -61,7 +61,7 @@ object CommandlineParser {
         import builder._
         OParser.sequence(
             programName("Java Call Graph Tests"),
-            head("JCG", "0.4.0"),
+            head("JCG", "0.5.0"),
 
             opt[String]("projects-directory")
                 .action((dir, c) => c.copy(projectsDir = Paths.get(dir)))
@@ -155,9 +155,9 @@ object CommandlineParser {
                         .action((_,c) => c.copy(analyzeJdk = true))
                 ),
 
-            cmd("dynamic-callgraph-add-declared-targets")
+            cmd("convert-dynamic-callgraph-to-csv")
                 .action((_,c) => c.copy(
-                    action = Action.DynamicCallGraphAddDeclaredTargets,
+                    action = Action.ConvertDynamicCallGraphToCSV,
                     adapters = List(DynamicJCGAdapter),
                     algorithmFilter = "Dynamic"
                 ))

@@ -3,14 +3,12 @@ import java.io.PrintWriter
 import java.io.Writer
 import java.util
 import java.util.stream.Collectors
-
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
 import scala.collection.mutable
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.core.{JsonFactory, JsonGenerator}
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-
 import com.ibm.wala.classLoader.Language.JAVA
 import com.ibm.wala.ipa.callgraph.AnalysisCacheImpl
 import com.ibm.wala.ipa.callgraph.AnalysisOptions
@@ -21,7 +19,13 @@ import com.ibm.wala.types.TypeReference
 import com.ibm.wala.util.NullProgressMonitor
 import com.ibm.wala.core.util.config.AnalysisScopeReader
 
+import scala.collection.immutable.ArraySeq
+
 object WalaJCGAdapter extends JavaTestAdapter {
+
+    val possibleAlgorithms: Array[String] = Array("CHA", "RTA", "0-CFA", "1-CFA", "0-1-CFA")
+
+    val frameworkName: String = "Wala"
 
     def serializeCG(
         algorithm: String,
@@ -82,7 +86,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
         val cache = new AnalysisCacheImpl
 
         val before = System.nanoTime
-        val cg =
+        val walaCallGraph =
             if (algorithm.contains("0-CFA")) {
                 val ncfaBuilder = Util.makeZeroCFABuilder(JAVA, options, cache, classHierarchy)
                 ncfaBuilder.makeCallGraph(options)
@@ -103,103 +107,55 @@ object WalaJCGAdapter extends JavaTestAdapter {
             } else throw new IllegalArgumentException
         val after = System.nanoTime
 
-        val initialEntryPoints = cg.getFakeRootNode.iterateCallSites().asScala.map(_.getDeclaredTarget)
+        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-        val worklist = mutable.Queue(initialEntryPoints.toSeq*)
-        val processed = mutable.Set(worklist.toSeq*)
+        for(callerWala <- walaCallGraph.asScala;
+            caller = walaMethodToJCGMethod(callerWala.getMethod.getReference);
+            callSiteWala <- callerWala.iterateCallSites().asScala;
+            targetWala <- walaCallGraph.getPossibleTargets(callerWala, callSiteWala).asScala) {
 
-        var reachableMethods = Set.empty[ReachableMethod]
-        while (worklist.nonEmpty) {
-            val currentMethod = worklist.dequeue()
+            val declaredTarget = walaMethodToJCGMethod(callSiteWala.getDeclaredTarget)
 
-            val currentMethodResolved = classHierarchy.resolveMethod(currentMethod)
-            if (currentMethodResolved == null) {
+            val pc = callSiteWala.getProgramCounter
 
-            }
-            val callSites = for {
-                cgNode ← cg.getNodes(currentMethod).asScala
-                cs ← cgNode.iterateCallSites().asScala
-            } yield {
-                val tgtsWala = cg.getPossibleTargets(cgNode, cs).asScala.map(_.getMethod.getReference)
-                tgtsWala.foreach { tgt ⇒
-                    if (!processed.contains(tgt)) {
-                        worklist += tgt
-                        processed += tgt
-                    }
+            val line =
+                try {
+                    callerWala.getMethod.getLineNumber(pc)
+                } catch {
+                    case _: ArrayIndexOutOfBoundsException ⇒ -1
                 }
-                if (currentMethodResolved != null) {
-                    val declaredTarget = cs.getDeclaredTarget
-                    val line = try {
-                        currentMethodResolved.getLineNumber(cs.getProgramCounter)
-                    } catch {
-                        case _: ArrayIndexOutOfBoundsException ⇒ -1
-                    }
-                    val tgts = tgtsWala.map(createMethodObject).toSet
-                    Some(CallSite(
-                        createMethodObject(declaredTarget),
-                        line,
-                        Some(cs.getProgramCounter),
-                        tgts
-                    ))
-                } else {
-                    None
-                }
-            }
 
-            reachableMethods +=
-                ReachableMethod(createMethodObject(currentMethod), callSites.toSet.flatten)
+            val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = Some(pc))
+
+            val target = walaMethodToJCGMethod(targetWala.getMethod.getReference)
+
+            val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map())
+            val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
+            targets += target
         }
 
-        // Write to JSON using a stream to fix issues with CGs too large for memory
-        val data = ReachableMethods(reachableMethods)
-        
-        // using Jackson directly instead of play-json
-        val factory = new JsonFactory()
-        val generator = factory.createGenerator(output)
-        generator.setPrettyPrinter(new DefaultPrettyPrinter())
-        
-        new ObjectMapper()
-            .registerModule(DefaultScalaModule)
-            .writerWithDefaultPrettyPrinter()
-            .writeValue(generator, data)
-        
-        generator.close()
+        ReachableMethods(jcgCallGraph).writeCsv(output)
 
         after - before
     }
 
-    val possibleAlgorithms: Array[String] = Array("0-1-CFA", "RTA", "0-CFA", "1-CFA", "CHA") //Array("0-1-CFA") //"RTA = "0-CFA = "1-CFA = "0-1-CFA")
-
-    val frameworkName: String = "WALA"
-
-    private def createMethodObject(method: MethodReference): Method = {
+    private def walaMethodToJCGMethod(method: MethodReference): Method = {
         val name = method.getName.toString
-        val declaringClass = toJVMString(method.getDeclaringClass)
-        val returnType = toJVMString(method.getReturnType)
+        val declaringClass = toJavaString(method.getDeclaringClass)
+        val returnType = toJavaString(method.getReturnType)
         val indexes = 0 until method.getNumberOfParameters
-        val params = indexes.map(i ⇒ toJVMString(method.getParameterType(i))).toList
+        val params = indexes.map(i ⇒ toJavaString(method.getParameterType(i)))
 
-        Method(name, declaringClass, returnType, params)
+        Method(name = name, declaringClass = declaringClass, returnType = returnType, parameterTypes = ArraySeq.from(params))
 
     }
 
-    private def toJVMString(typeReference: TypeReference): String =
-        if (typeReference.isClassType || isArrayOfClassType(typeReference)) {
-            typeReference.getName.toString+";"
+    private def toJavaString(typeReference: TypeReference): String =
+        if (typeReference.isClassType) {
+            typeReference.getName.toString.drop(1).replace('/', '.')
+        } else if(typeReference.isArrayType) {
+            toJavaString(typeReference.getArrayElementType) + "[]"
         } else {
-            typeReference.getName.toString
+            JVMType.toJavaType(typeReference.getName.toString)
         }
-
-    private def isArrayOfClassType(typeReference: TypeReference): Boolean = {
-        if (typeReference.isArrayType) {
-            val elementType = typeReference.getArrayElementType
-            if (elementType.isClassType) {
-                true
-            } else {
-                isArrayOfClassType(elementType)
-            }
-        } else {
-            false
-        }
-    }
 }

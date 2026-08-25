@@ -53,8 +53,7 @@ object Commandline {
                     case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
                     case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
                     case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, callGraphsDirectory, testCase)
-                    case Action.JDKCallbacks => computeJDKCallBacks(options, callGraphsDirectory, testCase)
-                    case Action.DynamicCallGraphAddDeclaredTargets => dynamicCallGraphAddDeclaredTargets(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
+                    case Action.ConvertDynamicCallGraphToCSV => convertDynamicCallGraphToCSV(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
             }
 
         }
@@ -63,7 +62,7 @@ object Commandline {
     private def runAnalysis(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, adapter: TestAdapter, cgAlgo: String, callGraphsDirectory: Path, testCase: String): Any = {
         val callGraphPath =
             if(options.compress)
-                callGraphsDirectory.resolve(s"$testCase-callgraph.json.gz")
+                callGraphsDirectory.resolve(s"$testCase-callgraph.csv.gz")
             else
                 callGraphsDirectory.resolve(s"$testCase-callgraph.gz")
 
@@ -81,6 +80,8 @@ object Commandline {
                             projectSpec.target(options.projectsDir.toFile).getCanonicalPath,
                             callGraphWriter,
                             AdapterOptions.makeJavaOptions(
+                                testCase,
+                                callGraphsDirectory,
                                 projectSpec.main.orNull,
                                 projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
                                 projectSpec.java,
@@ -115,14 +116,16 @@ object Commandline {
         }
     }
 
-    private def dynamicCallGraphAddDeclaredTargets(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphsDirectory: Path, testCase: String): Unit = {
-        val dynamicCallGraphPath = Util.findCallGraphFile(callGraphsDirectory, testCase)
-        val dynamicCallGraphSerialized = Util.readJSON(dynamicCallGraphPath).validate[DynamicJCGAdapter.CallGraphSerialized].get
+    private def convertDynamicCallGraphToCSV(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphsDirectory: Path, testCase: String): Unit = {
+        val dynamicCallGraphJSONPath = callGraphsDirectory.resolve(s"$testCase-callgraph.json.gz")
+        val dynamicCallGraphSerialized = Util.readJSON(dynamicCallGraphJSONPath).validate[DynamicJCGAdapter.CallGraphSerialized].get
         val classPath = projectSpec.allClassPathEntryPaths(options.projectsDir.toFile).map(Paths.get(_).toFile)
         val jdkPath = jreLocations(projectSpec.java)
-        val updatedCallGraph = dynamicCallGraphSerialized.addDeclaredTargetsToCallSites(classPath, jdkPath)
-        Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(dynamicCallGraphPath.toFile)))) { writer =>
-            Util.writeJson(writer, Json.toJson(updatedCallGraph))
+        val updatedCallGraph = dynamicCallGraphSerialized.addDeclaredTargetsToCallSites(classPath, jdkPath).jvmToJavaTypes
+
+        val dynamicCallGraphCSVPath = callGraphsDirectory.resolve(s"$testCase-callgraph.csv.gz")
+        Using(OutputStreamWriter(GZIPOutputStream(BufferedOutputStream(FileOutputStream(dynamicCallGraphCSVPath.toFile))))) { writer =>
+            updatedCallGraph.deserialize.toReachableMethods.writeCsv(writer)
         }.get
     }
 
@@ -133,7 +136,7 @@ object Commandline {
 
             val assessment: Assessment = options.language match {
                 case "java" =>
-                    val callGraph = Util.readReachableMethods(callGraphPath).toMap
+                    val callGraph = Util.readReachableMethods(callGraphPath)
 
                     CGMatcher.matchCallSites(
                         projectSpec,
@@ -176,13 +179,12 @@ object Commandline {
         val callGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
         val reachableMethods = Util.readReachableMethods(callGraphPath).reachableMethods
 
-        val appMethods = reachableMethods.count { rm =>
-            val declClass = rm.method.declaringClass
-            options.reachableMethodsInclude.matches(declClass)
+        val appMethods = reachableMethods.count { (caller, callSiteMap) =>
+            options.reachableMethodsInclude.matches(caller.declaringClass)
         }
 
-        val edgeCount = reachableMethods.foldLeft(0){ (acc, rm) =>
-            acc + rm.callSites.foldLeft(0)((acc,cs) => acc + cs.targets.size)
+        val edgeCount = reachableMethods.foldLeft(0){ case (acc, (method,callSiteMap)) =>
+            acc + callSiteMap.foldLeft(0) { case (acc,(callSite,targets)) => acc + targets.size }
         }
 
         val outputPath = callGraphDirectory.resolve(s"$testCase-size.json")
@@ -196,31 +198,6 @@ object Commandline {
         )
     }
 
-    def computeJDKCallBacks(options: CommandlineOptions, callGraphDirectory: Path, testCase: String): Unit = {
-        val jdkNameSpace = List("com/oracle", "com/sun", "javax", "java", "jdk", "org/ietf", "org/jcp", "org/omg", "org/w3c", "org/xml", "sun")
-        try {
-            val callGraph = Util.readReachableMethods(Util.findCallGraphFile(callGraphDirectory, testCase)).toMap
-            val jdkCallBacks =
-                for{ (caller,callSites) <- callGraph
-                    if(jdkNameSpace.exists(jdkPackage => caller.declaringClass.startsWith(s"L${jdkPackage}")))
-                    callSite <- callSites
-                    target <- callSite.targets
-                    if(options.reachableMethodsInclude.matches(target.declaringClass))
-                } yield Edge(caller = caller, line = Some(callSite.line), target = target, declaredTarget = callSite.declaredTarget)
-
-            val outputPath = callGraphDirectory.resolve(s"$testCase-jdk-callbacks.json.gz")
-            Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(outputPath.toFile)))) { writer =>
-                writer.write(
-                    Json.prettyPrint(
-                        Json.toJson(jdkCallBacks)
-                    ).getBytes(StandardCharsets.UTF_8)
-                )
-            }
-        } catch {
-            case exc: Throwable => exc.printStackTrace()
-        }
-    }
-
     def computePrecisionRecall(options: CommandlineOptions, projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
         try {
             val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
@@ -230,16 +207,16 @@ object Commandline {
 
             println(f"Compare $predictedCallGraphPath (${Files.size(predictedCallGraphPath) / (1024.0 * 1024.0)}%.2fmb) against $truthCallGraphPath (${Files.size(truthCallGraphPath) / (1024.0 * 1024.0)}%.2fmb)")
 
-            val predictedCallGraph = Util.readReachableMethods(predictedCallGraphPath).toMap
-            val truthCallGraph = Util.readDynamicCallGraph(truthCallGraphPath)
+            val predictedCallGraph = try { Util.readReachableMethods(predictedCallGraphPath) } catch { case exc: Exception => throw new RuntimeException(s"Error while parsing static call graph $predictedCallGraphPath", exc) }
+            val truthCallGraph = try { Util.readReachableMethods(truthCallGraphPath) } catch { case exc: Exception => throw new RuntimeException(s"Error while parsing dynamic call graph $truthCallGraphPath", exc) }
 
             val precisionRecall = PrecisionRecall(
-                actualCallGraph = truthCallGraph.toReachableMethods.toMap,
-                predictedCallGraph = predictedCallGraph,
+                actualCallGraph = truthCallGraph.reachableMethods,
+                predictedCallGraph = predictedCallGraph.reachableMethods,
                 packageScope = options.comparisonScope match
                     case ComparisonScope.All => Regex(".*")
                     case ComparisonScope.Package => projectSpec.compare_package match
-                        case Some(pkg) => Regex(s"L$pkg.*")
+                        case Some(pkg) => Regex(s"$pkg.*")
                         case None => Regex(".*"),
                 reachableMethodsInclude = options.reachableMethodsInclude,
                 edgeInclude = options.edgesInclude,
@@ -287,24 +264,24 @@ object Commandline {
 
             for(scope <- List("methods", "edges", "edges-with-line-numbers");
                 metric <- List("true-positives", "false-positives", "false-negatives", "false-positive-boundary", "false-negative-boundary")
-                if(!(scope == "methods" && metric == "false-negative-boundary"))
+                if(!(scope == "methods" && metric == "false-negative-boundary") && !(scope == "methods" && metric == "false-positive-boundary"))
                 ) {
 
-                val fileType = if(metric.contains("boundary")) "csv" else "json"
-                val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.$fileType.gz")
-                Using(GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile)))) { writer =>
+                val classification = callGraphDirectory.resolve(s"$testCase-${options.comparisonName}-$scope-$metric.csv.gz")
+                Using((GZIPOutputStream(BufferedOutputStream(FileOutputStream(classification.toFile))))) { writer =>
                     scope match {
-                        case "methods" => writeMetric(precisionRecall.methods, metric, writer)
+                        case "methods" =>
+                            writeMethods(precisionRecall.methods, metric, writer)
                         case "edges" =>
                             metric match
-                                case "false-positive-boundary" => writeBoundary(precisionRecall.edges.falsePositiveBoundary, writer)
-                                case "false-negative-boundary" => writeBoundary(precisionRecall.edges.falseNegativeBoundary, writer)
-                                case _                         => writeMetric(precisionRecall.edges, metric, writer)
+                                case "false-positive-boundary" => writeBoundary(precisionRecall.edges.falsePositiveBoundary, scope, writer)
+                                case "false-negative-boundary" => writeBoundary(precisionRecall.edges.falseNegativeBoundary, scope, writer)
+                                case _                         => writeEdges(precisionRecall.edges, scope, metric, writer)
                         case "edges-with-line-numbers" =>
                             metric match
-                                case "false-positive-boundary" => writeBoundary(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary, writer)
-                                case "false-negative-boundary" => writeBoundary(precisionRecall.edgesWithCallSiteLineNumbers.falseNegativeBoundary, writer)
-                                case _                         => writeMetric(precisionRecall.edgesWithCallSiteLineNumbers, metric, writer)
+                                case "false-positive-boundary" => writeBoundary(precisionRecall.edgesWithCallSiteLineNumbers.falsePositiveBoundary, scope, writer)
+                                case "false-negative-boundary" => writeBoundary(precisionRecall.edgesWithCallSiteLineNumbers.falseNegativeBoundary, scope, writer)
+                                case _                         => writeEdges(precisionRecall.edgesWithCallSiteLineNumbers, scope, metric, writer)
                     }
                 }
             }
@@ -315,24 +292,58 @@ object Commandline {
 
     ///////////////////////////// Helper Functions //////////////////////////////////////
 
-    private def writeMetric[T](classification: Classification[T], metric: String, writer: OutputStream): Unit =
+    private def writeMethods(classification: Classification[Method], metric: String, writer: OutputStream): Unit =
+        writer.write("method\n".getBytes(StandardCharsets.UTF_8))
         val result = metric match
             case "true-positives"  => classification.truePositive
             case "false-positives" => classification.falsePositive
             case "false-negatives" => classification.falseNegative
-        for(element <- result) {
-            writer.write((element.toString + "\n").getBytes(StandardCharsets.UTF_8))
-        }
 
-    private def writeBoundary(boundary: Map[Edge, TransitiveClosureSize], writer: OutputStream): Unit =
-        writer.write("closure-methods|closure-edges|caller|declared-target|target\n".getBytes(StandardCharsets.UTF_8))
+        result
+            .view
+            .toArray
+            .sortBy(method => method.toString)
+            .foreach(method => writer.write((method.toString + "\n").getBytes(StandardCharsets.UTF_8)))
+
+    private def writeEdges(classification: Classification[Edge], scope: String, metric: String, writer: OutputStream): Unit =
+        if(scope.contains("with-line-numbers"))
+            writer.write("caller|line|declared-target|target\n".getBytes(StandardCharsets.UTF_8))
+        else
+            writer.write("caller|declared-target|target\n".getBytes(StandardCharsets.UTF_8))
+
+        val result = metric match
+            case "true-positives" => classification.truePositive
+            case "false-positives" => classification.falsePositive
+            case "false-negatives" => classification.falseNegative
+
+        result
+            .view
+            .toArray
+            .sortBy(edge => (edge.caller.toString, edge.line, edge.target.toString))
+            .foreach(edge =>
+                if (scope.contains("with-line-numbers"))
+                    writer.write(s"${edge.caller}|${edge.line.mkString("")}|${edge.declaredTarget}|${edge.target}\n".getBytes(StandardCharsets.UTF_8))
+                else
+                    writer.write(s"${edge.caller}|${edge.declaredTarget}|${edge.target}\n".getBytes(StandardCharsets.UTF_8))
+            )
+
+
+    private def writeBoundary(boundary: Map[Edge, TransitiveClosureSize], scope: String, writer: OutputStream): Unit =
+        if (scope.contains("with-line-numbers"))
+            writer.write("closure-methods|closure-edges|caller|line|declared-target|target\n".getBytes(StandardCharsets.UTF_8))
+        else
+            writer.write("closure-methods|closure-edges|caller|declared-target|target\n".getBytes(StandardCharsets.UTF_8))
+
         boundary
             .view
-            .map((k, v) => (v, k))
             .toArray
-            .sortBy((closureSize, edge) => (closureSize.methods, closureSize.edges, edge.caller.toString))(using Ordering[(Long, Long, String)].reverse)
-            .map((closureSize, edge) => s"${closureSize.methods}|${closureSize.edges}|${edge.caller}${edge.line.map(line => ":" + line).getOrElse("")}|${edge.declaredTarget}|${edge.target}\n")
-            .foreach(line => writer.write(line.getBytes(StandardCharsets.UTF_8)))
+            .sortBy((edge, closureSize) => (closureSize.methods, closureSize.edges, edge.caller.toString, edge.line))(using Ordering[(Long, Long, String, Option[Int])].reverse)
+            .foreach((edge, closureSize) =>
+                if (scope.contains("with-line-numbers"))
+                    writer.write(s"${closureSize.methods}|${closureSize.edges}|${edge.caller}|${edge.line.mkString("")}|${edge.declaredTarget}|${edge.target}\n".getBytes(StandardCharsets.UTF_8))
+                else
+                    writer.write(s"${closureSize.methods}|${closureSize.edges}|${edge.caller}|${edge.declaredTarget}|${edge.target}\n".getBytes(StandardCharsets.UTF_8))
+            )
 
     private def toJson[T : Writes](classification: Classification[T]): String => JsValue = {
         case "true-positives"  => Json.toJson(classification.truePositive)

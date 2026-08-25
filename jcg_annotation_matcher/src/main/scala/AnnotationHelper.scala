@@ -121,13 +121,12 @@ object AnnotationHelper {
     /**
      * For the given `annotation`, it retrieves the parameterTypes specified in the annotation.
      */
-    def getParameterList(annotation: Annotation): List[Type] = { //@DirectCall -> Seq[FieldType]
+    def getParameterList(annotation: Annotation): Array[Type] = { //@DirectCall -> Seq[FieldType]
         val av = annotation.elementValuePairs collectFirst {
             case ElementValuePair("parameterTypes", ArrayValue(ab)) ⇒
-                ab.toIndexedSeq.map(ev ⇒
-                    ev.asInstanceOf[ClassValue].value)
+                ab.map(ev ⇒ ev.asInstanceOf[ClassValue].value).toArray[Type]
         }
-        av.getOrElse(List()).toList
+        av.getOrElse(Array.empty[Type])
     }
 
     /**

@@ -82,8 +82,8 @@ case class EdgeClassification(actualPositive: Set[Edge], predictedPositive: Set[
 
 
 case class PrecisionRecall(
-      actualCallGraph: Map[Method, Set[CallSite]],
-      predictedCallGraph: Map[Method, Set[CallSite]],
+      actualCallGraph: Map[Method, Map[CallSite, Set[Method]]],
+      predictedCallGraph: Map[Method, Map[CallSite, Set[Method]]],
       packageScope: Regex,
       reachableMethodsInclude: Regex,
       edgeInclude: Regex,
@@ -94,9 +94,10 @@ case class PrecisionRecall(
 ):
 
     val methods: Classification[Method] = Classification[Method](
-        actualCallGraph.keySet.filter(method => packageScope.matches(method.declaringClass) && reachableMethodsInclude.matches(method.declaringClass) && !reachableMethodsExclude.matches(method.declaringClass)),
-        predictedCallGraph.keySet.filter(method => packageScope.matches(method.declaringClass) && reachableMethodsInclude.matches(method.declaringClass) && !reachableMethodsExclude.matches(method.declaringClass))
+        filterMethods(actualCallGraph.keySet),
+        filterMethods(predictedCallGraph.keySet)
     )
+
 
     val edges: EdgeClassification = EdgeClassification(
         toEdges(actualCallGraph, withCallSiteLineNumber = false),
@@ -112,17 +113,35 @@ case class PrecisionRecall(
         computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
     )
 
-    private def toEdges(cg: Map[Method, Set[CallSite]], withCallSiteLineNumber: Boolean): Set[Edge] =
+    private def filterMethods(methods: Set[Method]): Set[Method] =
+        methods.filter(method =>
+            packageScope.matches(method.declaringClass) &&
+                reachableMethodsInclude.matches(method.declaringClass) &&
+                !reachableMethodsExclude.matches(method.declaringClass))
+
+    private def toEdges(cg: Map[Method, Map[CallSite, Set[Method]]], withCallSiteLineNumber: Boolean): Set[Edge] =
         val result = for {
-            (caller, callSites) <- cg;
-            callSite <- callSites;
-            target <- callSite.targets;
-            edgeString = s"${caller.declaringClass} -> ${target.declaringClass}";
-            if((packageScope.matches(caller.declaringClass) || packageScope.matches(target.declaringClass)) && edgeInclude.matches(edgeString) && !edgeExclude.matches(edgeString))
+            (caller, callSiteMap) <- cg;
+            (callSite,targets) <- callSiteMap;
+            target <- targets
             line = if(withCallSiteLineNumber) Some(callSite.line) else None
-        } yield(Edge(caller = caller, line = line, declaredTarget = callSite.declaredTarget, target = target))
+            edge = Edge(caller = caller, line = line, declaredTarget = callSite.declaredTarget, target = target)
+            if(includeEdge(edge))
+        } yield(edge)
+
         result.toSet
 
+    private def includeEdge(edge: Edge): Boolean =
+        val edgeString = s"${edge.caller.declaringClass} -> ${edge.target.declaringClass}";
+        (packageScope.matches(edge.caller.declaringClass) || packageScope.matches(edge.target.declaringClass)) &&
+            edgeInclude.matches(edgeString) &&
+            !edgeExclude.matches(edgeString) &&
+            !internalCall(edge)
+
+    /** detects internal calls to checkPackageAccess and loadClass that we want to exclude from */
+    private def internalCall(edge: Edge): Boolean =
+        (edge.target.declaringClass == "java.lang.ClassLoader" && edge.target.name == "loadClass" && edge.declaredTarget.name != "loadClass") ||
+        (edge.target.declaringClass == "java.lang.ClassLoader" && edge.target.name == "checkPackageAccess" && edge.declaredTarget.name != "checkPackageAccess")
 
 case class Edge(caller: Method, line: Option[Int], declaredTarget: Method, target: Method):
     override def equals(obj: Any): Boolean =

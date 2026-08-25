@@ -13,6 +13,7 @@ import soot.options.Options
 import soot.util.backend.ASMBackendUtils
 
 import java.nio.file.Paths
+import scala.collection.immutable.ArraySeq
 
 object SootJCGAdapter extends JavaTestAdapter {
 
@@ -104,74 +105,55 @@ object SootJCGAdapter extends JavaTestAdapter {
 
         val before = System.nanoTime
         scene.loadNecessaryClasses()
-        // TODO SET ENTRYPOINTS?
         PackManager.v().runPacks()
         val after = System.nanoTime
 
-        val cg = scene.getCallGraph
+        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-        val worklist = mutable.Queue(scene.getEntryPoints.asScala.toSeq*)
-        val processed = mutable.Set(worklist.toSeq*)
+        for(edge <- scene.getCallGraph.asScala) {
 
-        var reachableMethods = Set.empty[ReachableMethod]
+            val caller = sootMethodToJCGMethod(edge.src())
 
-        while (worklist.nonEmpty) {
-            val currentMethod = worklist.dequeue()
+            val stmt = edge.srcStmt()
 
-            var callSitesMap = Map.empty[(SootMethod, Int), Set[SootMethod]]
-            for (edge ← cg.edgesOutOf(currentMethod).asScala) {
-                val stmt = edge.srcStmt()
+            // e.g. null for finalize and no invoke for static initializers
+            val declaredTarget = if (stmt != null && stmt.containsInvokeExpr())
+                stmt.getInvokeExpr.getMethod
+            else
+                edge.tgt()
 
-                // e.g. null for finalize and no invoke for static initializers
-                val declaredMethod = if (stmt != null && stmt.containsInvokeExpr())
-                    stmt.getInvokeExpr.getMethod
+            val lineNumber =
+                if (stmt != null)
+                    stmt.getJavaSourceStartLineNumber
                 else
-                    edge.tgt()
+                    -1
 
-                val lineNumber =
-                    if (stmt != null)
-                        stmt.getJavaSourceStartLineNumber
-                    else
-                        -1
+            val callSite = CallSite(
+                declaredTarget = sootMethodToJCGMethod(declaredTarget),
+                line = lineNumber,
+                pc = None
+            )
 
-                val tgt = edge.tgt
-                val key =
-                    if (declaredMethod.getName == tgt.getName)
-                        declaredMethod → lineNumber
-                    else
-                        tgt → lineNumber
+            val target = sootMethodToJCGMethod(edge.tgt)
 
-                val tgts = callSitesMap.getOrElse(key, Set.empty)
-                callSitesMap = callSitesMap.updated(key, tgts + tgt)
-                if (!processed.contains(tgt)) {
-                    worklist += tgt
-                    processed += tgt
-                }
-            }
-
-            val callSites = callSitesMap.map {
-                case ((declaredTgt, line), tgts) ⇒
-                    // todo: would be good to have the PC
-                    CallSite(createMethodObject(declaredTgt), line, None, tgts.map(createMethodObject))
-            }.toSet
-
-            val method = createMethodObject(currentMethod)
-            reachableMethods += ReachableMethod(method, callSites)
+            val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
+            val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
+            targets += target
         }
 
-        output.write(Json.stringify(Json.toJson(ReachableMethods(reachableMethods))))
+        ReachableMethods(callGraph).writeCsv(output)
 
         G.reset()
 
         after - before
     }
 
-    private def createMethodObject(method: SootMethod): Method = {
+    private def sootMethodToJCGMethod(method: SootMethod): Method = {
         val name = method.getName
-        val declaringClass = ASMBackendUtils.toTypeDesc(method.getDeclaringClass.getType)
-        val returnType = ASMBackendUtils.toTypeDesc(method.getReturnType)
-        val paramTypes = method.getParameterTypes.asScala.map(ASMBackendUtils.toTypeDesc).toList
+        val declaringClass = method.getDeclaringClass.getType.toString
+        val returnType = method.getReturnType.toString
+        val paramTypes = method.getParameterTypes.asScala.map(_.toString)
 
-        Method(name, declaringClass, returnType, paramTypes)
+        Method(name = name, declaringClass = declaringClass, returnType = returnType, parameterTypes = ArraySeq.from(paramTypes))
     }
 }

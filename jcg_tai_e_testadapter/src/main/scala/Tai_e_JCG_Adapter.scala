@@ -3,12 +3,12 @@ import org.apache.commons.io.FileUtils
 import java.nio.file.{Files, Path, Paths}
 import java.lang.ProcessBuilder
 import java.text.ParseException
-
 import scala.collection.compat.immutable.ArraySeq
 import scala.io.Source
 import scala.util.Using
-
 import play.api.libs.json.Json
+
+import scala.collection.mutable
 
 object Tai_e_JCG_Adapter extends JavaTestAdapter {
     override val frameworkName: String = "Taie"
@@ -32,13 +32,11 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
         val callGraphDirectory = Files.createTempDirectory("tai-e")
         try {
 
-
-
             val taieJarPath = Paths.get("jcg_tai_e_testadapter", "src", "main", "resources", "tai-e-all-0.5.5-SNAPSHOT.jar").toAbsolutePath
 
             val cp = ArraySeq.ofRef(classPath).prepended(target)
 
-            val commonCallGraphOptions = "dump:true"
+            val commonCallGraphOptions = "dump-call-edges:true"
             val callGraphOptions = algorithm.toUpperCase match {
                 case "CHA" => List("--analysis", "cg=algorithm:cha;"+commonCallGraphOptions)
                 case "0-CFA" => List("--analysis", "cg=algorithm:pta;"+commonCallGraphOptions, "--analysis", "pta=cs:ci")
@@ -67,11 +65,8 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
             if(exitCode != 0)
                 throw IllegalArgumentException(s"Exit code $exitCode not 0")
 
-            val callGraphPath = callGraphDirectory.resolve("call-graph.dot")
-            val methods = parseDotNodes(callGraphPath)
-            val edges = parseDotEdges(callGraphPath, methods)
-
-            output.write(Json.prettyPrint(Json.toJson(edges)))
+            val reachableMethods = parseCallGraph(callGraphDirectory.resolve("call-edges.csv"))
+            reachableMethods.writeCsv(output)
 
             Files.readString(callGraphDirectory.resolve("timing.txt")).toLong
         } finally {
@@ -79,65 +74,38 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
         }
     }
 
-    private def parseDotEdges(callGraphPath: Path, methods: Map[Long, Method]): ReachableMethods =
-        val EdgeMatch = """\s*"\d+"\s*->\s*"\d+"\s*\[label.*""".r
-        val EdgePattern = """\s*"(\d+)"\s*->\s*"(\d+)"\s*\[label="\[(\d+)@L(-?\d+)\][^<]*(<[^;]*);",\];\s*""".r
+    private def parseCallGraph(callGraphPath: Path): ReachableMethods =
+        Using(Source.fromFile(callGraphPath.toString)) { csvSource =>
 
-        var callGraph: Map[Method, Map[Int, CallSite]] = Map.empty
+            val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-        Using(Source.fromFile(callGraphPath.toString)) { dot =>
-            for (line <- dot.getLines();
-                 if(EdgeMatch.matches(line))) {
-                line match
-                    case EdgePattern(from, to, pcStr, lineNumberStr, restSignature) =>
-                        val fromMethod = methods(from.toLong)
-                        val toMethod = methods(to.toLong)
-                        val pc = pcStr.toInt
-                        val lineNumber = lineNumberStr.toInt
-                        val (declaredSignature, _) = restSignature.splitAt(restSignature.lastIndexOf(">"))
-                        val newCallSite = CallSite(
-                            declaredTarget = parseMethodSignature(declaredSignature),
-                            line = lineNumber,
-                            pc = Some(pc),
-                            targets = Set.empty
-                        )
-                        val callSites = callGraph.getOrElse(fromMethod, Map(pc -> newCallSite))
-                        val currentCallSite = callSites.getOrElse(pc, newCallSite)
-                        callGraph += fromMethod -> (
-                            callSites + (pc ->
-                                currentCallSite.copy(targets = currentCallSite.targets + toMethod)
-                                )
-                            )
-                    case _ => throw ParseException(s"Cannot parse edge ${line}", 0)
-            }
-        }.get
+            for(line <- csvSource.getLines().drop(1)) {
 
-        ReachableMethods(
-            callGraph.view.map((method,callSites) => ReachableMethod(method,callSites.values.toSet)).toSet
-        )
-
-    private def parseDotNodes(callGraphPath: Path): Map[Long,Method] = {
-
-        val NodeMatch = """\s*"\d+"\s*\[label.*""".r
-        val NodePattern = """\s*"(\d+)"\s*\[label="([^"]+)",\];\s*""".r
-
-        Using(Source.fromFile(callGraphPath.toString)) { dot =>
-            val result =
-                for(line <- dot.getLines();
-                    if(NodeMatch.matches(line)))
-                yield (
-                    line match
-                        case NodePattern(id, label) => id.toLong -> parseMethodSignature(label)
-                        case _ => throw ParseException(s"Cannot parse dot node ${line}", 0)
+                val Array(callingContextStr,callingMethodStr,callSiteIdStr,callSiteLineNumberStr,declaredTargetStr,targetContextStr,targetMethodStr) = line.split('|')
+//                val callingContext = parseContext(Json.parse(callingContextStr)).get
+                val caller = parseMethodSignature(callingMethodStr)
+                val callSiteId = callSiteIdStr.toInt
+                val callSiteLineNumber = callSiteLineNumberStr.toInt
+                val declaredTarget = parseMethodSignature(declaredTargetStr)
+//                val targetContext = Json.parse(targetContextStr)
+                val target = parseMethodSignature(targetMethodStr)
+                val callSite = CallSite(
+                    declaredTarget = declaredTarget,
+                    line = callSiteLineNumber,
+                    pc = None
                 )
-            result.toMap
+
+
+                val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
+                val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
+                targets += target
+            }
+
+            ReachableMethods(callGraph)
         }.get
-    }
-
-
 
     /**
-     * Convert method signature from Tai-e format to the JVM format used by JCG
+     * Convert method signature from Tai-e format to the format used by JCG
      *
      * @param sig Tai-e method signature as string (e.g. `<cfne.Demo: void main(java.lang.String[])>`)
      * @return Method object similar to other JCG adapters
@@ -146,44 +114,13 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
         val Array(className, methodSignature) = signature.stripPrefix("<").stripSuffix(">").split(": ")
         val (returnType, methodAndParams) = methodSignature.splitAt(methodSignature.indexOf(' '))
         val (methodName, params) = methodAndParams.splitAt(methodAndParams.indexOf("("))
-        val parameterTypes = params.stripPrefix("(").stripSuffix(")").split(",").map(toJVMType).toList
+        val parameterTypes = params.stripPrefix("(").stripSuffix(")").split(",")
 
         Method(
             name = methodName.strip(),
-            declaringClass = toJVMType(className),
-            returnType = toJVMType(returnType),
-            parameterTypes = parameterTypes
+            declaringClass = className,
+            returnType = returnType,
+            parameterTypes = ArraySeq.unsafeWrapArray(parameterTypes)
         )
-    }
-
-    /**
-     * Convert Type string (e.g. `java.lang.String[]`) to NVM internal format used
-     * by JCG (e.g. `[Ljava.lang.String;`)
-     * Also used for class names (e.g. `cfne.Demo` becomes `Lcfne/Demo;`)
-     *
-     * @param javaType
-     * @return
-     */
-    private def toJVMType(javaType0: String): String = {
-        var javaType = javaType0
-
-        var dims: Int = 0
-        while (javaType.endsWith("[]")) {
-            dims += 1
-            javaType = javaType.substring(0, javaType.length - 2)
-        }
-        val base: String = javaType match {
-            case "byte" => "B"
-            case "char" => "C"
-            case "double" => "D"
-            case "float" => "F"
-            case "int" => "I"
-            case "long" => "J"
-            case "short" => "S"
-            case "boolean" => "Z"
-            case "void" => "V"
-            case _ => "L" + javaType.replace('.', '/') + ";"
-        }
-        "[".repeat(dims) + base
     }
 }

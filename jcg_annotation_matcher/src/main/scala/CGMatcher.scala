@@ -9,6 +9,7 @@ import play.api.libs.json.Json
 
 import java.nio.file.Path
 import java.util.zip.GZIPInputStream
+import scala.collection.compat.immutable.ArraySeq
 import scala.util.boundary
 import scala.util.boundary.break
 import scala.util.Using
@@ -32,7 +33,7 @@ object CGMatcher {
         projectSpec:         ProjectSpecification,
         JREPath:             Path,
         parent:              File,
-        callGraph:           Map[Method, Set[CallSite]],
+        callGraph:           ReachableMethods,
         verbose:             Boolean              = false
     ): Assessment = boundary {
         if (!verbose)
@@ -59,7 +60,7 @@ object CGMatcher {
                 val directCallAnnotations = AnnotationHelper.directCallAnnotations(annotation)
 
                 val csAssessment = handleDirectCallAnnotations(
-                    callGraph.getOrElse(annotatedMethod, Set.empty),
+                    callGraph.reachableMethods.getOrElse(annotatedMethod, Map.empty),
                     annotatedMethod,
                     method,
                     directCallAnnotations,
@@ -73,7 +74,7 @@ object CGMatcher {
                 val indirectCallAnnotations = AnnotationHelper.indirectCallAnnotations(annotation)
 
                 val icsAssessment = handleIndirectCallAnnotations(
-                    callGraph,
+                    callGraph.reachableMethods,
                     method,
                     indirectCallAnnotations,
                     verbose
@@ -95,33 +96,33 @@ object CGMatcher {
      * whether the prohibit call targets are not present in the computed call graph.
      */
     private def handleDirectCallAnnotations(
-        computedCallSites:     Set[CallSite],
+        computedCallSites:     Map[CallSite,Set[Method]],
         annotatedMethod:       Method,
         method:                br.Method,
         directCallAnnotations: Seq[Annotation],
         verbose:               Boolean
     )(implicit p: SomeProject): Assessment = boundary {
         var finalAssessment: Assessment = Sound
-        for (annotation ← directCallAnnotations) {
+        for (annotation <- directCallAnnotations) {
             // here we identify call sites only by name and line number, not regarding types
             AnnotationVerifier.verifyDirectCallAnnotation(annotation, method)
 
             val line = AnnotationHelper.getLineNumber(annotation)
             val name = AnnotationHelper.getName(annotation)
 
-            computedCallSites.find { cs ⇒
+            computedCallSites.find { (cs,_) ⇒
                 cs.line == line && cs.declaredTarget.name == name
             } match {
-                case Some(computedCallSite) ⇒
+                case Some((computedCallSite,computedTargets)) ⇒
 
-                    val computedTargets = computedCallSite.targets.map(_.declaringClass)
+                    val computedTargetClasses = computedTargets.map(_.declaringClass)
 
-                    val resolvedTargets = AnnotationHelper.getResolvedTargets(annotation)
-                    AnnotationVerifier.verifyJVMTypes(resolvedTargets)
-                    for (annotatedTgt ← resolvedTargets) {
-                        if (!computedTargets.contains(annotatedTgt)) {
+                    val resolvedTargetClasses = AnnotationHelper.getResolvedTargets(annotation)
+                    AnnotationVerifier.verifyJVMTypes(resolvedTargetClasses)
+                    for (annotatedTgtClass <- resolvedTargetClasses) {
+                        if (!computedTargetClasses.contains(annotatedTgtClass)) {
                             if (verbose)
-                                println(s"$line:${annotatedMethod.declaringClass}#${annotatedMethod.name}:\t there is no call to $annotatedTgt#$name")
+                                println(s"$line:${annotatedMethod.declaringClass}#${annotatedMethod.name}:\t there is no call to $annotatedTgtClass#$name")
                             break(Unsound)
                         } else {
                             if (verbose) println("found it")
@@ -130,8 +131,8 @@ object CGMatcher {
 
                     val prohibitedTargets = AnnotationHelper.getProhibitedTargets(annotation)
                     AnnotationVerifier.verifyJVMTypes(prohibitedTargets)
-                    for (prohibitedTgt ← prohibitedTargets) {
-                        if (computedTargets.contains(prohibitedTgt)) {
+                    for (prohibitedTgt <- prohibitedTargets) {
+                        if (computedTargetClasses.contains(prohibitedTgt)) {
                             if (verbose)
                                 println(s"$line:${annotatedMethod.declaringClass}#${annotatedMethod.name}:\t there is a call to prohibited target $prohibitedTgt#$name")
                             finalAssessment = finalAssessment.combine(Imprecise)
@@ -153,14 +154,14 @@ object CGMatcher {
      * whether the prohibit call targets are not present in the computed call graph.
      */
     private def handleIndirectCallAnnotations(
-        reachableMethods:        Map[Method, Set[CallSite]],
+        reachableMethods:        Map[Method, Map[CallSite, Set[Method]]],
         source:                  br.Method,
         indirectCallAnnotations: Seq[Annotation],
         verbose:                 Boolean
     )(implicit p: SomeProject): Assessment = boundary {
         val annotatedSource = convertMethod(source)
         var finalAssessment: Assessment = Sound
-        for (annotation ← indirectCallAnnotations) {
+        for (annotation <- indirectCallAnnotations) {
             AnnotationVerifier.verifyCallExistence(annotation, source)
 
             val name = AnnotationHelper.getName(annotation)
@@ -169,16 +170,16 @@ object CGMatcher {
 
             val resolvedTargets = AnnotationHelper.getResolvedTargets(annotation)
             AnnotationVerifier.verifyJVMTypes(resolvedTargets)
-            for (declaringClass ← resolvedTargets) {
-                val annotatedTarget = Method(name, declaringClass, returnType, parameterTypes)
+            for (declaringClass <- resolvedTargets) {
+                val annotatedTarget = Method(name, declaringClass, returnType, ArraySeq.unsafeWrapArray(parameterTypes))
                 if (!callsIndirectly(reachableMethods, annotatedSource, annotatedTarget, verbose))
                     break(Unsound)
             }
 
             val prohibitedTargets = AnnotationHelper.getProhibitedTargets(annotation)
             AnnotationVerifier.verifyJVMTypes(prohibitedTargets)
-            for (prohibitedTgt ← prohibitedTargets) {
-                val annotatedTarget = Method(name, prohibitedTgt, returnType, parameterTypes)
+            for (prohibitedTgt <- prohibitedTargets) {
+                val annotatedTarget = Method(name, prohibitedTgt, returnType, ArraySeq.unsafeWrapArray(parameterTypes))
                 if (callsIndirectly(reachableMethods, annotatedSource, annotatedTarget, verbose))
                     finalAssessment = finalAssessment.combine(Imprecise)
             }
@@ -191,7 +192,7 @@ object CGMatcher {
      * Is there a path in the call graph from the `source` to the `annotatedTarget`?
      */
     private def callsIndirectly(
-        reachableMethods: Map[Method, Set[CallSite]],
+        reachableMethods: Map[Method, Map[CallSite, Set[Method]]],
         source:           Method,
         annotatedTarget:  Method,
         verbose:          Boolean
@@ -203,9 +204,9 @@ object CGMatcher {
             val currentSource = workset.head
             workset = workset.tail
 
-            val computedCallSites = reachableMethods.getOrElse(currentSource, Set.empty)
+            val computedCallSites = reachableMethods.getOrElse(currentSource, Map.empty)
 
-            for (tgt ← computedCallSites.flatMap(_.targets)) {
+            for (targets <- computedCallSites.values; tgt <- targets) {
                 if (tgt == annotatedTarget) {
                     if (verbose) println(s"Found transitive call $source -> $annotatedTarget")
                     break(true)
@@ -231,8 +232,8 @@ object CGMatcher {
         val name = method.name
         val declaringClass = method.classFile.thisType.toJVMTypeName
         val returnType = method.returnType.toJVMTypeName
-        val parameterTypes = method.parameterTypes.toList.map(_.toJVMTypeName)
+        val parameterTypes = method.parameterTypes.map(_.toJVMTypeName).toArray
 
-        Method(name, declaringClass, returnType, parameterTypes)
+        Method(name = name, declaringClass = declaringClass, returnType = returnType, parameterTypes = ArraySeq.unsafeWrapArray(parameterTypes))
     }
 }

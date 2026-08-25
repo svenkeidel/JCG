@@ -1,16 +1,17 @@
+import com.fasterxml.jackson.core.JsonFactory
 import org.apache.commons.io.IOUtils
-import org.opalj.br.{ClassType, FieldAccessMethodHandle, FieldType, FieldTypes, MethodCallMethodHandle, MethodDescriptor, ReturnType}
+import org.opalj.br.{Attributes, ClassType, FieldAccessMethodHandle, FieldType, FieldTypes, MethodCallMethodHandle, MethodDescriptor, ReturnType}
 import org.opalj.br.analyses.Project
 import org.opalj.br.instructions.*
 
-import java.io.{BufferedInputStream, File, FileInputStream, IOException, Writer}
+import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream, FileOutputStream, IOException, OutputStream, OutputStreamWriter, Writer}
 import java.nio.file.{Files, Path, Paths}
-import java.util.zip.GZIPInputStream
+import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
 import scala.jdk.OptionConverters.*
 import scala.util.Using
-import play.api.libs.json.{JsResult, JsValue, Json, Reads, Writes, __}
+import play.api.libs.json.*
 import play.api.libs.functional.syntax.*
 
 import java.net.URL
@@ -32,6 +33,8 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         output:         Writer,
         adapterOptions: AdapterOptions = AdapterOptions.makeEmptyOptions()
     ): Long = {
+        val testCase = adapterOptions.getString("testCase")
+        val outputDirectory = adapterOptions.getPath("outputDirectory")
         val mainClass = adapterOptions.getString("mainClass")
         var classPath = List.from(adapterOptions.getStringArray("classPath"))
         val JDKPath = adapterOptions.getPath("JDKPath")
@@ -63,7 +66,6 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             var args = List(javaPath.toAbsolutePath.toString)
             args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
             args :+= s"-XX:-ClassUnloading" // It is important to disable class unloading, such that method ids remain valid.
-            args :+= s"-Xcheck:jni" // forces the JVM to validate all JNI/JVMTI arguments, giving descriptive errors instead of silent crashes.
             args :+= s"-XX:ErrorFile=${crashLog.toString}"
             args ++= jvmArgs
             args :+= s"-agentpath:${agentPath.toAbsolutePath}=$agentArgs"
@@ -96,8 +98,23 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             val after = System.nanoTime
 
             println(s"Read call graph from $callGraphPath with ${Files.size(callGraphPath).toDouble / math.pow(10, 6)}MB")
-            Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) {
-                input => IOUtils.copy(input, output, StandardCharsets.UTF_8)
+            Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) { input =>
+
+                // Add declared targets and write json to file.
+                val callGraphSerialized = Json.parse(input).validate[DynamicJCGAdapter.CallGraphSerialized].get
+                val updatedCallGraph = callGraphSerialized
+                    .addDeclaredTargetsToCallSites(classPath.map(File(_)).toArray, JDKPath)
+
+                Using(OutputStreamWriter(GZIPOutputStream(BufferedOutputStream(FileOutputStream(outputDirectory.resolve(s"$testCase-callgraph.json.gz").toFile))))) { jsonWriter =>
+                    writeJson(jsonWriter, Json.toJson(updatedCallGraph))
+                }
+
+                // Additionally serialize as CSV
+                val reachableMethods = updatedCallGraph
+                    .jvmToJavaTypes
+                    .deserialize
+                    .toReachableMethods
+                reachableMethods.writeCsv(output)
             }.get
 
             after - before
@@ -123,61 +140,19 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
         def addDeclaredTarget(instruction: Instruction): CallSiteSerialized =
             instruction match {
-                case invoke: INVOKESTATIC =>
-                    this.copy(declaredTarget =
-                        Some(Method(
-                            declaringClass = invoke.declaringClass.toJVMTypeName,
-                            name = invoke.name,
-                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
-                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
-                        ))
-                    )
-
-                case invoke: INVOKESPECIAL =>
-                    this.copy(declaredTarget =
-                        Some(Method(
-                            declaringClass = invoke.declaringClass.toJVMTypeName,
-                            name = invoke.name,
-                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
-                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
-                        ))
-                    )
-
-                case invoke: INVOKEVIRTUAL =>
-                    this.copy(declaredTarget =
-                        Some(Method(
-                            declaringClass = invoke.declaringClass.toJVMTypeName,
-                            name = invoke.name,
-                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
-                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
-                        ))
-                    )
-
-                case invoke: INVOKEINTERFACE =>
-                    this.copy(declaredTarget =
-                        Some(Method(
-                            declaringClass = invoke.declaringClass.toJVMTypeName,
-                            name = invoke.name,
-                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
-                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
-                        ))
-                    )
-                case invoke: INVOKEDYNAMIC =>
-                    this.copy(declaredTarget =
-                        Some(Method(
-                            declaringClass =
-                                invoke.bootstrapMethod.handle match {
-                                    case handle: MethodCallMethodHandle => handle.receiverType.toJVMTypeName
-                                    case handle: FieldAccessMethodHandle => s"${handle.declaringClassType.toJVMTypeName}.${handle.name}"
-                                },
-                            name = invoke.name,
-                            returnType = invoke.methodDescriptor.returnType.toJVMTypeName,
-                            parameterTypes = invoke.methodDescriptor.parameterTypes.map(_.toJVMTypeName).toList
-                        ))
-                    )
+                case MethodInvocationInstruction(dc, _, name, desc) =>
+                    this.copy(declaredTarget = Some(Method(
+                        declaringClass = dc.toJVMTypeName,
+                        name = name,
+                        returnType = desc.returnType.toJVMTypeName,
+                        parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](_.toJVMTypeName))
+                    )))
 
                 case _ => throw IllegalArgumentException(s"Expected InvocationInstruction, but got $instruction")
             }
+
+        def jvmToJavaTypes: CallSiteSerialized =
+            this.copy(declaredTarget = declaredTarget.map(_.jvmToJavaTypes))
 
     case class CallTreeSerialized(callTree: Map[String, CallTreeSerialized]):
         def deserialize(callSites: Map[String,CallSite]): CallTree =
@@ -217,6 +192,12 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             this.copy(callSites = updatedCallSites)
 
+        def jvmToJavaTypes: CallGraphSerialized =
+            this.copy(
+                callSites = callSites.view.mapValues(_.jvmToJavaTypes).toMap,
+                methods = methods.view.mapValues(_.jvmToJavaTypes).toMap
+            )
+
         private def toClassType(jvmRefType: String): ClassType = {
             assert(jvmRefType.length > 2)
             ClassType(jvmRefType.substring(1, jvmRefType.length - 1))
@@ -235,24 +216,23 @@ object DynamicJCGAdapter extends JavaTestAdapter {
     case class CallSite(method: Method, line: Int, pc: Int, declaredTarget: Option[Method])
     case class CallTree(callSites: Map[CallSite, CallTree]):
         def toReachableMethods: ReachableMethods =
-            val reachableMethods = mutable.Map.empty[Method, mutable.Map[CallSite, Set[Method]]]
+            val reachableMethods = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
             addReachableMethods(reachableMethods)
-            ReachableMethods(reachableMethods.view.map((method, callSites) =>
-                ReachableMethod(method, callSites.view.map((callSite, targets) =>
-                    new OuterCallSite(declaredTarget = callSite.declaredTarget.orNull, line = callSite.line, pc = Some(callSite.pc), targets = targets)
-                ).toSet)
-            ).toSet)
+            val defaultDeclaredTarget = Method(name = "", declaringClass = "", returnType = "", parameterTypes = ArraySeq.empty)
+            ReachableMethods(reachableMethods.view.map((method, callSiteMap) =>
+                method ->
+                    callSiteMap.view.map((callSite, targets) =>
+                        new OuterCallSite(declaredTarget = callSite.declaredTarget.getOrElse(defaultDeclaredTarget), line = callSite.line, pc = Some(callSite.pc)) -> targets.toSet
+                    ).toMap
+                ).toMap
+            )
 
-        private def addReachableMethods(reachableMethods: mutable.Map[Method, mutable.Map[CallSite, Set[Method]]]): Unit =
+        private def addReachableMethods(reachableMethods: mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]]): Unit =
             for ((callSite, subTree) <- callSites) {
-
                 val method = callSite.method
-                val methodCallSites = reachableMethods.getOrElse(callSite.method, mutable.Map.empty[CallSite, Set[Method]])
-                val methodTargets = methodCallSites.getOrElse(callSite, Set.empty)
-
-                val newTargets = subTree.callSites.keySet.map(_.method)
-                methodCallSites += callSite -> (methodTargets ++ newTargets)
-                reachableMethods += method -> (methodCallSites)
+                val callSiteMap = reachableMethods.getOrElseUpdate(callSite.method, mutable.Map.empty)
+                val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
+                targets ++= subTree.callSites.keySet.map(_.method)
 
                 subTree.addReachableMethods(reachableMethods)
             }
@@ -260,4 +240,29 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
     implicit val callTreeReads: Reads[CallTree] = (json: JsValue) =>
         callGraphSerializedReads.reads(json).map(_.deserialize)
+
+    private def writeJson(output: Writer, json: JsValue): Unit = {
+        Using(new JsonFactory().createGenerator(output)) { generator =>
+            def writeNode(value: JsValue): Unit = value match {
+                case JsNull => generator.writeNull()
+                case JsBoolean(b) => generator.writeBoolean(b)
+                case JsNumber(n) => generator.writeNumber(n.bigDecimal)
+                case JsString(s) => generator.writeString(s)
+                case JsArray(elements) =>
+                    generator.writeStartArray()
+                    elements.foreach(writeNode)
+                    generator.writeEndArray()
+                case JsObject(fields) =>
+                    generator.writeStartObject()
+                    fields.foreach { case (key, v) =>
+                        generator.writeFieldName(key)
+                        writeNode(v)
+                    }
+                    generator.writeEndObject()
+            }
+
+            writeNode(json)
+        }.get
+    }
+
 }
