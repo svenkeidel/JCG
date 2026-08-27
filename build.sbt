@@ -78,11 +78,9 @@ lazy val jcg_wala_testadapter = project.settings(
 lazy val jcg_soot_testadapter = project.settings(
     commonSettings,
     name := "JCG Soot Test Adapter",
-    resolvers += "soot snapshot" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-snapshot/",
-    resolvers += "soot release" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-release/",
+    resolvers += "soot snapshot" at "https://ssebuild.sit.fraunhofer.de/nexus/repository/maven-mixed",
     resolvers += "Google Maven" at "https://maven.google.com/",
-    libraryDependencies += "org.soot-oss" % "soot" % "4.7.1",
-    libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
+    libraryDependencies += "org.soot-oss" % "soot" % "4.8.0-SNAPSHOT",
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)
@@ -90,12 +88,12 @@ lazy val jcg_soot_testadapter = project.settings(
 lazy val jcg_sootup_testadapter = project.settings(
     commonSettings,
     name := "JCG SootUp Test Adapter",
-    libraryDependencies += "org.soot-oss" % "sootup.core" % "2.0.0",
-    libraryDependencies += "org.soot-oss" % "sootup.java.core" % "2.0.0",
-    libraryDependencies += "org.soot-oss" % "sootup.java.bytecode.frontend" % "2.0.0",
-    libraryDependencies += "org.soot-oss" % "sootup.jimple.frontend" % "2.0.0",
-    libraryDependencies += "org.soot-oss" % "sootup.callgraph" % "2.0.0",
-    libraryDependencies += "org.soot-oss" % "sootup.qilin" % "2.0.0",
+    libraryDependencies += "org.soot-oss" % "sootup.core" % "3.0.1",
+    libraryDependencies += "org.soot-oss" % "sootup.java.core" % "3.0.1",
+    libraryDependencies += "org.soot-oss" % "sootup.java.bytecode.frontend" % "3.0.1",
+    libraryDependencies += "org.soot-oss" % "sootup.jimple.frontend" % "3.0.1",
+    libraryDependencies += "org.soot-oss" % "sootup.callgraph" % "3.0.1",
+    libraryDependencies += "org.soot-oss" % "sootup.qilin" % "3.0.1",
 
     libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
     libraryDependencies += "org.slf4j" % "slf4j-simple" % "2.0.13",
@@ -228,8 +226,6 @@ lazy val jcg_testadapter_commons = project.settings(
 lazy val jcg_evaluation = project.settings(
     commonSettings,
     name := "JCG Evaluation",
-    resolvers += "soot snapshot" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-snapshot/",
-    resolvers += "soot release" at "https://soot-build.cs.uni-paderborn.de/nexus/repository/soot-release/",
     resolvers += Resolver.mavenLocal,
 //    libraryDependencies += "de.opal-project" %% "hermes" % opalVersion,
     publishArtifact := false

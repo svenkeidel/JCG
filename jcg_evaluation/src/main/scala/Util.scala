@@ -1,11 +1,12 @@
-import com.fasterxml.jackson.core.{JsonFactory, StreamReadConstraints, StreamWriteConstraints}
 
 import java.io.*
 import java.nio.file.*
 import java.util.zip.GZIPInputStream
+import java.nio.charset.StandardCharsets
+
+import com.fasterxml.jackson.core.{JsonFactory, StreamReadConstraints, StreamWriteConstraints}
 import play.api.libs.json.*
 
-import java.nio.charset.StandardCharsets
 import scala.util.{Try, Using}
 
 object Util {

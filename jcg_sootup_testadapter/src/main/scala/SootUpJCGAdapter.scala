@@ -96,27 +96,24 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             caller = sootMethodToJCGMethod(sootUpCaller);
             call <- sootUpCallGraph.callsFrom(sootUpCaller).asScala
         ) {
-            val stmt = call.getInvokableStmt
+            val stmt = call.invokableStmt
 
             // e.g. null for finalize and no invoke for static initializers
-            val declaredTarget = if (stmt != null && stmt.containsInvokeExpr()) {
-                stmt.getInvokeExpr.get().getMethodSignature
-            } else
-                call.getTargetMethodSignature
+            val declaredTarget = if (stmt != null && stmt.getInvokeExpr.isPresent) {
+                sootMethodToJCGMethod(stmt.getInvokeExpr.get().getMethodSignature)
+            } else {
+                Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
+            }
 
-            val lineNumber =
-                if (stmt != null)
-                    stmt.getPositionInfo.getStmtPosition.getFirstLine
-                else
-                    -1
+            val lineNumber = call.getLineNumber
 
             val callSite = CallSite(
-                declaredTarget = sootMethodToJCGMethod(declaredTarget),
+                declaredTarget = declaredTarget,
                 line = lineNumber,
                 pc = None
             )
 
-            val target = sootMethodToJCGMethod(call.getTargetMethodSignature)
+            val target = sootMethodToJCGMethod(call.targetMethodSignature)
 
             val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)

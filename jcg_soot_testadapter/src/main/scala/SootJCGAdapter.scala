@@ -4,15 +4,12 @@ import java.io.PrintStream
 import java.io.Writer
 import scala.jdk.CollectionConverters.*
 import scala.collection.mutable
-import play.api.libs.json.Json
 import soot.G
 import soot.PackManager
 import soot.Scene
 import soot.SootMethod
 import soot.options.Options
-import soot.util.backend.ASMBackendUtils
 
-import java.nio.file.Paths
 import scala.collection.immutable.ArraySeq
 
 object SootJCGAdapter extends JavaTestAdapter {

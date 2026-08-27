@@ -1,6 +1,5 @@
 
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -10,12 +9,12 @@ import java.util.stream.Stream;
 import org.apache.commons.io.FilenameUtils;
 import org.jspecify.annotations.NonNull;
 import sootup.core.IdentifierFactory;
-import sootup.core.frontend.ClassProvider;
+import sootup.core.frontend.PathbasedClassProvider;
 import sootup.core.frontend.ResolveException;
 import sootup.core.frontend.SootClassSource;
 import sootup.core.inputlocation.AnalysisInputLocation;
+import sootup.core.interceptor.BodyInterceptor;
 import sootup.core.model.SourceType;
-import sootup.core.transform.BodyInterceptor;
 import sootup.core.types.ClassType;
 import sootup.core.util.StreamUtils;
 import sootup.core.views.View;
@@ -28,7 +27,6 @@ import sootup.java.core.signatures.ModuleSignature;
 import sootup.java.core.types.JavaClassType;
 
 public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnalysisInputLocation {
-    // FIXME: handle closing the filesystem resource
     private FileSystem theFileSystem;
     private final Map<ModuleSignature, JavaModuleInfo> moduleInfoMap = new HashMap<>();
     boolean isResolved = false;
@@ -61,7 +59,7 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
             @NonNull ClassType classType, @NonNull View view) {
         JavaClassType klassType = (JavaClassType) classType;
 
-        ClassProvider classProvider = getClassProvider(view);
+        PathbasedClassProvider classProvider = getClassProvider(view);
         Path filepath =
                 theFileSystem.getPath(
                         klassType.getFullyQualifiedName().replace('.', '/')
@@ -120,7 +118,7 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
             @NonNull IdentifierFactory identifierFactory,
             @NonNull View view) {
 
-        ClassProvider classProvider = getClassProvider(view);
+        PathbasedClassProvider classProvider = getClassProvider(view);
 
         String moduleInfoFilename =
                 JavaModuleIdentifierFactory.MODULE_INFO_FILE
@@ -154,7 +152,7 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
         }
     }
 
-    protected ClassProvider getClassProvider(@NonNull View view) {
+    protected PathbasedClassProvider getClassProvider(@NonNull View view) {
         return new AsmJavaClassProvider(view);
     }
 
@@ -260,7 +258,6 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
 
     @Override
     public int hashCode() {
-        return 5938591;
+        return 31;
     }
-
 }

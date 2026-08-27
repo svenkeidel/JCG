@@ -17,6 +17,8 @@ import scala.util.matching.compat.Regex
 object Commandline {
 
     def main(args: Array[String]): Unit = {
+        System.setProperty("play.json.parser.maxNestingDepth", "10000")
+        
         val options = CommandlineParser.parseConfig(args)
 
         val jreLocations = Util.getJRELocations(options)

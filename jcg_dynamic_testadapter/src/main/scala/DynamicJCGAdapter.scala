@@ -174,7 +174,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
                     val callingClass = toClassType(callingMethod.declaringClass)
                     val classFile = project.classFile(callingClass).getOrElse(throw IllegalArgumentException(s"class ${callingMethod.declaringClass} not found"))
                     val returnType = ReturnType(callingMethod.returnType);
-                    val parameterTypes = scala.collection.compat.immutable.ArraySeq(callingMethod.parameterTypes.map(FieldType.apply): _*);
+                    val parameterTypes = scala.collection.compat.immutable.ArraySeq.from(callingMethod.parameterTypes.map(FieldType.apply));
                     val md = MethodDescriptor(parameterTypes, returnType);
                     val method = classFile.findMethod(callingMethod.name, md).getOrElse(throw IllegalArgumentException(s"method ${callingMethod.declaringClass}.$callingMethod not found"))
                     val code = method.body.getOrElse(throw IllegalArgumentException(s"No body for method ${callingMethod.declaringClass}.$callingMethod"))

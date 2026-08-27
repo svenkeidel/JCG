@@ -1,6 +1,6 @@
 import play.api.libs.json.{Json, Reads, Writes, __}
 
-import java.io.{BufferedReader, OutputStreamWriter, Reader, Writer}
+import java.io.{BufferedReader, Writer}
 import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 
@@ -72,6 +72,7 @@ given ReachableMethodsWrites: Writes[ReachableMethods] = Json.writes[ReachableMe
  * A call site has a `declaredTarget` method, is associated with a line number (-1 if unknown)
  */
 case class CallSite(declaredTarget: Method, line: Int, pc: Option[Int])
+
 given CallSiteReads: Reads[CallSite] = Json.reads[CallSite]
 given CallSiteWrites: Writes[CallSite] = Json.writes[CallSite]
 
@@ -113,6 +114,9 @@ object Method {
         }
 }
 
+given MethodReads: Reads[Method] = Json.reads[Method]
+given MethodWrites: Writes[Method] = Json.writes[Method]
+
 object JVMType {
     def toJavaType(jvmType: String): String =
         if(jvmType.startsWith("L") && jvmType.endsWith(";")) {
@@ -134,6 +138,3 @@ object JVMType {
             }
         }
 }
-
-given MethodReads: Reads[Method] = Json.reads[Method]
-given MethodWrites: Writes[Method] = Json.writes[Method]
