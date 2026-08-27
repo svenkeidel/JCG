@@ -45,7 +45,7 @@ object ReachableMethods:
                 val caller = Method.fromString(callerStr)
                 val line = lineStr.toInt
                 val pc = pcStr.toIntOption
-                val declaredTarget = Method.fromString(declaredTargetStr)
+                val declaredTarget = try { Method.fromString(declaredTargetStr) } catch { case _: Exception => Method(name = "", declaringClass = "", returnType = "", parameterTypes = ArraySeq.empty) }
                 val target = Method.fromString(targetStr)
 
                 val callSite = CallSite(
