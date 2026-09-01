@@ -1,6 +1,6 @@
 import com.fasterxml.jackson.core.JsonFactory
 import org.apache.commons.io.IOUtils
-import org.opalj.br.{Attributes, ClassType, FieldAccessMethodHandle, FieldType, FieldTypes, MethodCallMethodHandle, MethodDescriptor, ReturnType}
+import org.opalj.br.{Attributes, BootstrapMethod, ClassType, FieldAccessMethodHandle, FieldType, FieldTypes, MethodCallMethodHandle, MethodDescriptor, ReturnType}
 import org.opalj.br.analyses.Project
 import org.opalj.br.instructions.*
 
@@ -14,6 +14,7 @@ import scala.util.Using
 import play.api.libs.json.*
 import play.api.libs.functional.syntax.*
 
+import java.lang.ProcessBuilder.Redirect
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import scala.collection.immutable.ArraySeq
@@ -75,7 +76,8 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
             println(args.mkString(" "))
 
-            val processBuilder = new ProcessBuilder(args.asJava).inheritIO()
+            val processBuilder = new ProcessBuilder(args.asJava)
+            processBuilder.redirectErrorStream(true)
 
             val usrLib = Paths.get("/usr/lib/x86_64-linux-gnu")
             val libBoostPath = Files.walk(usrLib, 1).filter(lib => Files.isRegularFile(lib) && lib.getFileName.toString.startsWith("libboost_iostreams")).findFirst().toScala
@@ -93,7 +95,10 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             //            processBuilder.environment().put("ASAN_OPTIONS", "detect_leaks=1:allow_user_segv_handler=1")
 
             val before = System.nanoTime
-            val exitCode = processBuilder.start().waitFor()
+
+            val process = processBuilder.start()
+            process.getInputStream.transferTo(System.out)
+            val exitCode = process.waitFor()
             println(s"Dynamic Callgraph Process Exit Code: $exitCode")
             val after = System.nanoTime
 
@@ -140,12 +145,20 @@ object DynamicJCGAdapter extends JavaTestAdapter {
 
         def addDeclaredTarget(instruction: Instruction): CallSiteSerialized =
             instruction match {
+                case INVOKEDYNAMIC(bootstrapMethod: BootstrapMethod, name: String, desc: MethodDescriptor) =>
+                    this.copy(declaredTarget = Some(Method(
+                        declaringClass = "<invokeDynamic>",
+                        name = name,
+                        returnType = OpalJCGAdatper.jvmTypeToLambdaNamingConvention(desc.returnType.toJVMTypeName),
+                        parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](tpe => OpalJCGAdatper.jvmTypeToLambdaNamingConvention(tpe.toJVMTypeName)))
+                    )))
+
                 case MethodInvocationInstruction(dc, _, name, desc) =>
                     this.copy(declaredTarget = Some(Method(
-                        declaringClass = dc.toJVMTypeName,
+                        declaringClass = OpalJCGAdatper.jvmTypeToLambdaNamingConvention(dc.toJVMTypeName),
                         name = name,
-                        returnType = desc.returnType.toJVMTypeName,
-                        parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](_.toJVMTypeName))
+                        returnType = OpalJCGAdatper.jvmTypeToLambdaNamingConvention(desc.returnType.toJVMTypeName),
+                        parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](tpe => OpalJCGAdatper.jvmTypeToLambdaNamingConvention(tpe.toJVMTypeName)))
                     )))
 
                 case _ => throw IllegalArgumentException(s"Expected InvocationInstruction, but got $instruction")

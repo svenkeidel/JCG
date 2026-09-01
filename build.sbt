@@ -207,7 +207,7 @@ lazy val jcg_dynamic_testadapter = project.settings(
     assembly / aggregate := false,
     publishArtifact := false,
     Compile / compile := (Compile / compile).dependsOn(buildJVMTIAgent).value
-).dependsOn(jcg_testadapter_commons)
+).dependsOn(jcg_testadapter_commons,jcg_opal_testadapter)
 
 lazy val buildJVMTIAgent = taskKey[Unit]("Build the JVMTI Agent")
 

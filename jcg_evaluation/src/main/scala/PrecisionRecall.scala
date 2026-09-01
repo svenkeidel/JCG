@@ -1,4 +1,4 @@
-import play.api.libs.json.{Json, Reads, Writes}
+import play.api.libs.json.{Json, Reads, Writes, __}
 
 import java.io.{File, FileInputStream}
 import java.nio.file.{Path, Paths}
@@ -117,7 +117,11 @@ case class PrecisionRecall(
         methods.filter(method =>
             packageScope.matches(method.declaringClass) &&
                 reachableMethodsInclude.matches(method.declaringClass) &&
-                !reachableMethodsExclude.matches(method.declaringClass))
+                !reachableMethodsExclude.matches(method.declaringClass) &&
+                !internalMethod(method))
+
+    private def internalMethod(method: Method): Boolean =
+        (method.declaringClass.endsWith("$$Lambda") && method.name == "get$Lambda")
 
     private def toEdges(cg: Map[Method, Map[CallSite, Set[Method]]], withCallSiteLineNumber: Boolean): Set[Edge] =
         val result = for {
@@ -127,7 +131,7 @@ case class PrecisionRecall(
             line = if(withCallSiteLineNumber) Some(callSite.line) else None
             edge = Edge(caller = caller, line = line, declaredTarget = callSite.declaredTarget, target = target)
             if(includeEdge(edge))
-        } yield(edge)
+        } yield(removeCallSiteInsensitiveLineNumbers(edge))
 
         result.toSet
 
@@ -139,9 +143,36 @@ case class PrecisionRecall(
             !internalCall(edge)
 
     /** detects internal calls to checkPackageAccess and loadClass that we want to exclude from */
-    private def internalCall(edge: Edge): Boolean =
+    private def internalCall(edge: Edge): Boolean = {
+        // Class Loading
         (edge.target.declaringClass == "java.lang.ClassLoader" && edge.target.name == "loadClass" && edge.declaredTarget.name != "loadClass") ||
-        (edge.target.declaringClass == "java.lang.ClassLoader" && edge.target.name == "checkPackageAccess" && edge.declaredTarget.name != "checkPackageAccess")
+        (edge.target.declaringClass == "java.lang.ClassLoader" && edge.target.name == "checkPackageAccess" && edge.declaredTarget.name != "checkPackageAccess") ||
+        // Closures
+        ((edge.target.declaringClass.startsWith("java.lang.invoke.LambdaForm$MH") || edge.target.declaringClass == "java.lang.invoke.Invokers$Holder")
+            && edge.target.name == "linkToTargetMethod"
+            && edge.declaredTarget.name != "linkToTargetMethod"
+        ) ||
+        (edge.target.declaringClass == "java.lang.invoke.MethodHandleNatives" && edge.target.name == "linkCallSite" && edge.declaredTarget.name != "linkCallSite") ||
+        (edge.target.declaringClass == "java.lang.invoke.MethodHandleNatives" && edge.target.name == "linkMethodHandleConstant" && edge.declaredTarget.name != "linkMethodHandleConstant") ||
+        (edge.target.declaringClass == "java.lang.invoke.MethodHandleNatives" && edge.target.name == "findMethodHandleType" && edge.declaredTarget.name != "findMethodHandleType") ||
+        (edge.caller.declaringClass.startsWith("java.lang.invoke.LambdaForm$DMH") && edge.target.declaringClass.endsWith("$$Lambda") && edge.target.name == "get$Lambda") ||
+        (edge.caller.declaringClass.endsWith("$$Lambda") && (edge.caller.name == "get$Lambda" || edge.caller.name == "<init>")) ||
+        (edge.target.declaringClass.endsWith("$$Lambda") && (edge.target.name == "get$Lambda" || edge.target.name == "<init>"))
+    }
+
+    private def isCallSiteInsensitiveComparison(edge: Edge): Boolean = {
+        // Static Initializers
+        (edge.target.name == "<clinit>") ||
+        // Closures
+        (edge.caller.declaringClass.endsWith("$$Lambda") && edge.target.name.startsWith("lambda$"))
+    }
+
+
+    private def removeCallSiteInsensitiveLineNumbers(edge: Edge): Edge =
+        if(isCallSiteInsensitiveComparison(edge))
+            edge.removeLineNumber
+        else
+            edge
 
 case class Edge(caller: Method, line: Option[Int], declaredTarget: Method, target: Method):
     override def equals(obj: Any): Boolean =
@@ -150,6 +181,7 @@ case class Edge(caller: Method, line: Option[Int], declaredTarget: Method, targe
             case _ => false
     override def hashCode(): Int = (caller,line,target).hashCode()
     override def toString: String = s"$caller: ${line.iterator.mkString} [$declaredTarget] -> $target"
+    def removeLineNumber: Edge = copy(line = None)
 
 object Edge {
     implicit val methodReads: Reads[Edge] = Json.reads[Edge]

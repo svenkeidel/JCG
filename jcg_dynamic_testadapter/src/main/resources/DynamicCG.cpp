@@ -3,10 +3,12 @@
 #include <csignal>
 #include <execinfo.h>
 #include <unistd.h>
+#include <string.h>
 
 #include <map>
 #include <unordered_set>
 
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <boost/iostreams/filtering_stream.hpp>
@@ -19,6 +21,9 @@ using namespace std::string_view_literals;
 
 static jvmtiEnv *jvmti = NULL;
 static char *call_graph_file_name = NULL;
+jclass stackOverflowClass;
+jmethodID methodHandleNativesLinkCallSite;
+static std::unordered_map<std::string, std::string> closure_renaming;
 
 struct Method {
     const jmethodID method_id;
@@ -44,6 +49,9 @@ struct Method {
             throw std::runtime_error("cannot get class: error "+std::to_string(err));
         declaringClass = std::string(className);
         jvmti->Deallocate((unsigned char*) className);
+
+        if (closure_renaming.contains(declaringClass))
+            declaringClass = "L" + closure_renaming[declaringClass] + ";";
 
         char *methodName;
         char *sig;
@@ -378,19 +386,175 @@ void write_cg_to_file(jvmtiEnv *jvmti) {
     // std::cout << call_graph_file_name << " size: " << std::filesystem::file_size(call_graph_file_name) << "\n" << std::flush;
 }
 
+// Helper function to convert a raw frame to a readable method name
+void print_method_info(jvmtiEnv *jvmti, jmethodID method, jlocation location) {
+    char *method_name = nullptr;
+    char *signature = nullptr;
+    jclass declaring_class;
+    char *class_signature = nullptr;
+
+    // Get method details
+    if (jvmti->GetMethodName(method, &method_name, &signature, nullptr) == JVMTI_ERROR_NONE) {
+        // Get class details
+        if (jvmti->GetMethodDeclaringClass(method, &declaring_class) == JVMTI_ERROR_NONE) {
+            if (jvmti->GetClassSignature(declaring_class, &class_signature, nullptr) == JVMTI_ERROR_NONE) {
+                std::cout <<class_signature << ": " << method_name << signature << " at " << location << std::endl;
+                jvmti->Deallocate((unsigned char*)class_signature);
+            }
+        }
+        jvmti->Deallocate((unsigned char*)method_name);
+        jvmti->Deallocate((unsigned char*)signature);
+    }
+}
+
 bool inside_throw_stackoverflow_exception = false;
 void throw_stackoverflow_exception(JNIEnv *jni) {
     inside_throw_stackoverflow_exception = true;
 
-    jclass stackOverflowClass = jni->FindClass("java/lang/StackOverflowError");
     if (stackOverflowClass != nullptr) {
         jni->ThrowNew(stackOverflowClass, "JVMTI Agent: Maximum stack depth reached.");
-        jni->DeleteLocalRef(stackOverflowClass);
     }
 
     inside_throw_stackoverflow_exception = false;
 }
 
+jvmtiFrameInfo find_closures_invoke_dynamic(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread) {
+    if (jvmti->GetStackTrace(thread, 0, max_stack_depth, stack_trace, &stack_size) != JVMTI_ERROR_NONE) {
+        throw std::runtime_error("cannot get stacktrace.");
+    }
+
+    for (int i = 0; i < stack_size; ++i) {
+        if (stack_trace[i].method == methodHandleNativesLinkCallSite && i+1 < stack_size) {
+            return stack_trace[i+1];
+        }
+    }
+
+    throw std::runtime_error("Could not find closures invoke dynamic");
+}
+
+namespace std {
+    void replace_all(std::string& str, const std::string& from, const std::string& to) {
+        if (from.empty()) return; // Prevent infinite loops
+
+        size_t start_pos = 0;
+        // Loop as long as the substring is found
+        while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+            str.replace(start_pos, from.length(), to);
+            // Advance position past the replacement to handle overlapping patterns
+            start_pos += to.length();
+        }
+    }
+}
+
+
+std::string jvm_type_to_closure_name(std::string jvm_type, std::string prepend_to_first = "", std::string append_to_first = "") {
+    if (jvm_type.empty()) {
+        return "";
+    } else if (jvm_type.starts_with("L")) {
+        size_t object_end = jvm_type.find(";");
+        std::string object_type = jvm_type.substr(1, object_end - 1);
+        std::replace(object_type.begin(), object_type.end(), '/', '_');
+        std::replace_all(object_type, "$", "__");
+        std::string rest = jvm_type.substr(object_end + 1);
+        return prepend_to_first + object_type + append_to_first + jvm_type_to_closure_name(rest, "_");
+    } else if (jvm_type.starts_with("[")) {
+        jvm_type = jvm_type.substr(1, jvm_type.length() - 1);
+        return jvm_type_to_closure_name(jvm_type, prepend_to_first, "_array");
+    } else {
+        std::string result;
+        switch (jvm_type.front()) {
+            case 'B': result = "byte"; break;
+            case 'C': result = "char"; break;
+            case 'D': result = "double"; break;
+            case 'F': result = "float"; break;
+            case 'I': result = "int"; break;
+            case 'J': result = "long"; break;
+            case 'S': result = "short"; break;
+            case 'V': result = "void"; break;
+            case 'Z': result = "boolean"; break;
+            default: throw std::runtime_error("Do not recognize JVM type: " + jvm_type);
+        }
+
+        std::string rest = jvm_type.substr(1);
+
+        return prepend_to_first + result + append_to_first + jvm_type_to_closure_name(rest, "_");
+    }
+}
+
+std::string jvm_method_signature_to_closure_name(std::string method_signature) {
+    size_t parameter_end = method_signature.find(")");
+    std::string parameters = method_signature.substr(1, parameter_end - 1);
+    std::string return_type = method_signature.substr(parameter_end + 1);
+    return jvm_type_to_closure_name(return_type) + jvm_type_to_closure_name(parameters, "_");
+}
+
+void add_closure_renaming(std::string jvm_internal_closure_name, jvmtiFrameInfo invoke_dynamic) {
+    jclass declaring_class;
+    char *jvm_class_signature = nullptr;
+    char *jvm_method_name = nullptr;
+    char *jvm_method_signature = nullptr;
+
+    if (jvmti->GetMethodDeclaringClass(invoke_dynamic.method, &declaring_class) == JVMTI_ERROR_NONE) {
+        if (jvmti->GetClassSignature(declaring_class, &jvm_class_signature, nullptr) == JVMTI_ERROR_NONE) {
+            if (jvmti->GetMethodName(invoke_dynamic.method, &jvm_method_name, &jvm_method_signature, nullptr) == JVMTI_ERROR_NONE) {
+
+                // Prepare class name
+                std::string class_name = std::string(jvm_class_signature);
+                class_name = class_name.substr(1, class_name.length() - 2);
+
+                std::string method_name = std::string(jvm_method_name);
+                std::replace(method_name.begin(), method_name.end(), '<', '_');
+                std::replace(method_name.begin(), method_name.end(), '>', '_');
+
+                std::string method_signature = jvm_method_signature_to_closure_name(jvm_method_signature);
+
+                std::string closure_name = class_name + "_" + method_name + "_" + method_signature + "_" + std::to_string(invoke_dynamic.location) + "$$Lambda";
+
+                std::cout << "Rename " << jvm_internal_closure_name << " to " << closure_name << std::endl;
+
+                closure_renaming[jvm_internal_closure_name] = closure_name;
+
+                jvmti->Deallocate((unsigned char*)jvm_method_name);
+                jvmti->Deallocate((unsigned char*)jvm_method_signature);
+            }
+            jvmti->Deallocate((unsigned char*)jvm_class_signature);
+        }
+    }
+
+}
+
+void JNICALL ClassPrepare(jvmtiEnv *jvmti,
+            JNIEnv* jni,
+            jthread thread,
+            jclass klass) {
+    std::lock_guard<std::mutex> lock(method_entry_mutex);
+
+    char* signature = nullptr;
+    char* generic = nullptr;
+
+    jvmtiError error = jvmti->GetClassSignature(klass, &signature, &generic);
+
+    try {
+        if (error == JVMTI_ERROR_NONE) {
+            if (signature != nullptr) {
+                std::string closure_name(signature);
+                if (closure_name.contains("$$Lambda")) {
+                    jvmtiFrameInfo invoke_dynamic = find_closures_invoke_dynamic(jvmti, jni, thread);
+
+                    add_closure_renaming(closure_name, invoke_dynamic);
+                }
+            }
+        }
+    } catch (const std::runtime_error& e) {
+        std::cerr << "JVMTI Agent - ClassPrepare: Caught runtime error: "sv << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "JVMTI Agent - ClassPrepare: unknown exception\n"sv;
+    }
+
+
+    if (signature != nullptr) jvmti->Deallocate((unsigned char*)signature);
+    if (generic != nullptr) jvmti->Deallocate((unsigned char*)generic);
+}
 
 void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
     // This early return ensures that we do not get in a deadlock:
@@ -430,18 +594,32 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
             method_calls += 1;
         }
     } catch (const std::runtime_error& e) {
-        std::cerr << "JVMTI Agent: Caught runtime error: "sv;
+        std::cerr << "JVMTI Agent - MethodEntry: Caught runtime error: "sv << e.what() << std::endl;
     } catch (...) {
-        std::cerr << "JVMTI Agent: unknown exception\n"sv;
+        std::cerr << "JVMTI Agent - MethodEntry: unknown exception\n"sv;
     }
 
 }
 
-JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti, JNIEnv* jni_env) {
+void JNICALL VMInit(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread) {
+    std::cout << "JVMTI Agent - VMInit\n"sv;
+
+    stackOverflowClass = jni->FindClass("java/lang/StackOverflowError");
+
+    jclass methodHandleNatives = jni->FindClass("java/lang/invoke/MethodHandleNatives");
+
+    methodHandleNativesLinkCallSite = jni->GetStaticMethodID(
+        methodHandleNatives,
+        "linkCallSite",
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/invoke/MemberName;"
+    );
+}
+
+JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti, JNIEnv* jni) {
     std::lock_guard<std::mutex> lock(method_entry_mutex);
-    std::cout << "JVMTI Agent: VMDeath. Start final serialization.\n";
+    std::cout << "JVMTI Agent - VMDeath: Start final serialization.\n"sv;
     write_cg_to_file(jvmti);
-    std::cout << "JVMTI Agent: Final serialization finished.\n";
+    std::cout << "JVMTI Agent - VMDeath: Final serialization finished.\n"sv;
 }
 
 JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
@@ -455,10 +633,14 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
     jvmti->AddCapabilities(&capabilities);
 
     jvmtiEventCallbacks callbacks = {0};
+    callbacks.VMInit = VMInit;
     callbacks.MethodEntry = MethodEntry;
+    callbacks.ClassPrepare = ClassPrepare;
     callbacks.VMDeath = VMDeath;
     jvmti->SetEventCallbacks(&callbacks, sizeof(callbacks));
 
+    jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, NULL);
+    jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_PREPARE, NULL);
     jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_METHOD_ENTRY, NULL);
     jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_VM_DEATH, NULL);
 

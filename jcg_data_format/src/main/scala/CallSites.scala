@@ -118,6 +118,78 @@ given MethodReads: Reads[Method] = Json.reads[Method]
 given MethodWrites: Writes[Method] = Json.writes[Method]
 
 object JVMType {
+    def toLambdaNamingConvention(className: String, methodName: String, methodSignature: String, pc: Int): String =
+        val method = methodName
+            .replace('<', '_')
+            .replace('>', '_')
+
+        val signatureName = jvmMethodSignatureToClosureName(methodSignature)
+
+        s"L${className}_${method}_${signatureName}_${pc}$$$$Lambda;"
+
+    private def jvmTypeToClosureName(jvmType: String, prependToFirst: String = "", appendToFirst: String = ""): String = {
+        if (jvmType.isEmpty) {
+            ""
+        } else if (jvmType.startsWith("L")) {
+            val objectEnd = jvmType.indexOf(';')
+            if (objectEnd < 0) {
+                throw new IllegalArgumentException(s"Invalid JVM object type: $jvmType")
+            }
+
+            val objectType = jvmType
+                .substring(1, objectEnd)
+                .replace('/', '_')
+                .replace("$", "__")
+
+            val rest = jvmType.substring(objectEnd + 1)
+
+            prependToFirst +
+                objectType +
+                appendToFirst +
+                jvmTypeToClosureName(rest, "_")
+
+        } else if (jvmType.startsWith("[")) {
+            jvmTypeToClosureName(
+                jvmType.substring(1),
+                prependToFirst,
+                "_array"
+            )
+
+        } else {
+            val result = jvmType.charAt(0) match {
+                case 'B' => "byte"
+                case 'C' => "char"
+                case 'D' => "double"
+                case 'F' => "float"
+                case 'I' => "int"
+                case 'J' => "long"
+                case 'S' => "short"
+                case 'V' => "void"
+                case 'Z' => "boolean"
+                case _ => throw new IllegalArgumentException(s"Do not recognize JVM type: $jvmType")
+            }
+
+            val rest = jvmType.substring(1)
+
+            prependToFirst +
+                result +
+                appendToFirst +
+                jvmTypeToClosureName(rest, "_")
+        }
+    }
+
+    private def jvmMethodSignatureToClosureName(methodSignature: String): String = {
+        val parameterEnd = methodSignature.indexOf(')')
+        if (parameterEnd < 0) {
+            throw new IllegalArgumentException(s"Invalid JVM method signature: $methodSignature")
+        }
+
+        val parameters = methodSignature.substring(1, parameterEnd)
+        val returnType = methodSignature.substring(parameterEnd + 1)
+
+        jvmTypeToClosureName(returnType) + jvmTypeToClosureName(parameters, "_")
+    }
+
     def toJavaType(jvmType: String): String =
         if(jvmType.startsWith("L") && jvmType.endsWith(";")) {
             jvmType.substring(1,jvmType.length-1).replace('/','.')

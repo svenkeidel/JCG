@@ -5,14 +5,13 @@ import scala.collection.JavaConverters.*
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import com.typesafe.config.ConfigValueFactory
-import org.opalj.br.DeclaredMethod
-import org.opalj.br.ClassType
+import org.opalj.br.{ClassType, ConfigKeyPrefix, DeclaredMethod, Type}
 import org.opalj.br.analyses.DeclaredMethods
 import org.opalj.br.analyses.DeclaredMethodsKey
 import org.opalj.br.analyses.Project
 import org.opalj.br.analyses.Project.JavaClassFileReader
 import org.opalj.fpcf.PropertyStoreKey
-import org.opalj.br.instructions.MethodInvocationInstruction
+import org.opalj.br.instructions.{INVOKEDYNAMIC, MethodInvocationInstruction}
 import org.opalj.fpcf.FinalEP
 import org.opalj.fpcf.PropertyStore
 import org.opalj.tac.cg.AllocationSiteBasedPointsToCallGraphKey
@@ -127,7 +126,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
         implicit val ps: PropertyStore = project.get(PropertyStoreKey)
 
         // run call graph, along with extra analyses e.g. for reflection
-        algorithm match {
+        val opalCallGraph = algorithm match {
             case "CHA" ⇒ project.get(CHACallGraphKey)
             case "RTA" ⇒ project.get(RTACallGraphKey)
             case "MTA" ⇒ project.get(MTACallGraphKey)
@@ -150,16 +149,11 @@ object OpalJCGAdatper extends JavaTestAdapter {
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
         for {
-            callerOpal <- declaredMethods.declaredMethods
-            callees =  ps(callerOpal, Callees.key) match {
-               case FinalEP(_, callees: Callees) => callees
-               case _ => throw new RuntimeException()
-            }
-            callerContext <- callees.callerContexts
-            (pc, targets) <- callees.callSites(callerContext)
+            callerOpal <- opalCallGraph.reachableMethods()
+            (pc, targets) <- opalCallGraph.calleesOf(callerOpal.method)
             tgt <- targets
         } {
-            val caller = opalMethodToJCGMethod(callerOpal)
+            val caller = opalMethodToJCGMethod(callerOpal.method)
 
             val target = opalMethodToJCGMethod(tgt.method)
 
@@ -167,12 +161,20 @@ object OpalJCGAdatper extends JavaTestAdapter {
             val declaredTarget = try {
                 tgt.method.definedMethod.body match {
                     case Some(body) => body.instructions.lift(pc) match {
+                        case Some(INVOKEDYNAMIC(_, name, desc)) =>
+                            Method(
+                                declaringClass = "<invokedynamic>",
+                                name = name,
+                                returnType = convertTypeName(desc.returnType),
+                                parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](convertTypeName))
+                            )
+
                         case Some(MethodInvocationInstruction(dc, _, name, desc)) =>
                             Method(
-                                declaringClass = dc.toJava,
+                                declaringClass = convertTypeName(dc),
                                 name = name,
-                                returnType = desc.returnType.toJava,
-                                parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](_.toJava))
+                                returnType = convertTypeName(desc.returnType),
+                                parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](convertTypeName))
                             )
                         case _ => defaultDeclaredTarget
                     }
@@ -202,9 +204,76 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
     private def opalMethodToJCGMethod(method: DeclaredMethod): Method =
         Method(
-            declaringClass = method.declaringClassType.toJava,
+            declaringClass = convertTypeName(method.declaringClassType),
             name = method.name,
-            returnType = method.descriptor.returnType.toJava,
-            parameterTypes = ArraySeq.from(method.descriptor.parameterTypes.iterator.map[String](_.toJava))
+            returnType = convertTypeName(method.descriptor.returnType),
+            parameterTypes = ArraySeq.from(method.descriptor.parameterTypes.iterator.map[String](tpe => convertTypeName(tpe)))
         )
+
+    def convertTypeName(tpe: Type): String =
+        JVMType.toJavaType(jvmTypeToLambdaNamingConvention(tpe.toJVMTypeName))
+
+    def jvmTypeToLambdaNamingConvention(jvmType: String): String = {
+        val LambdaName = """L(.+)[/$]([^/($]+)(\([^)]*\)[A-Z]*):(\d+)\$Lambda;""".r
+        jvmType match
+            case LambdaName(className, methodName, signature, pcStr) =>
+                val sig = fixPackageNames(signature.replace(':', ';').replace(']','['))
+                val pc = pcStr.toInt
+                JVMType.toLambdaNamingConvention(className = className, methodName = methodName, methodSignature = sig, pc = pc)
+            case _ => jvmType
+    }
+
+    private def fixPackageNames(methodSignature: String): String = {
+
+        def fixObjectType(binaryName: String): String = {
+            val parts = binaryName.split("\\$", -1)
+
+            // Convention: package parts are lowercase; the first uppercase part is
+            // assumed to be the top-level class name.
+            val firstClassPart =
+                parts.indexWhere(part => part.headOption.exists(Character.isUpperCase))
+
+            if (firstClassPart <= 0) {
+                binaryName
+            } else {
+                val result = new StringBuilder(binaryName.length)
+
+                parts.indices.foreach { index =>
+                    if (index > 0) {
+                        // Dots before the top-level class; '$' for nested classes.
+                        result.append(if (index <= firstClassPart) '/' else '$')
+                    }
+                    result.append(parts(index))
+                }
+
+                result.toString
+            }
+        }
+
+        val result = new StringBuilder(methodSignature.length)
+        var index = 0
+
+        while (index < methodSignature.length) {
+            if (methodSignature.charAt(index) == 'L') {
+                val end = methodSignature.indexOf(';', index)
+
+                if (end < 0) {
+                    throw new IllegalArgumentException(
+                        s"Invalid JVM method signature: $methodSignature"
+                    )
+                }
+
+                result.append('L')
+                result.append(fixObjectType(methodSignature.substring(index + 1, end)))
+                result.append(';')
+
+                index = end + 1
+            } else {
+                result.append(methodSignature.charAt(index))
+                index += 1
+            }
+        }
+
+        result.toString
+    }
 }
