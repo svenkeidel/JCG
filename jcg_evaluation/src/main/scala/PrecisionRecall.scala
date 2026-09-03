@@ -80,70 +80,50 @@ case class EdgeClassification(actualPositive: Set[Edge], predictedPositive: Set[
 //        }
 //        TransitiveClosureSize(methods = transitiveClosureMethods.size, edges = transitiveClosureEdges.size)
 
+def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]],
+                        predictedCallGraph: Map[Method, Map[CallSite, Set[Method]]],
+                        packageScope: Regex,
+                        reachableMethodsInclude: Regex,
+                        edgeInclude: Regex,
+                        reachableMethodsExclude: Regex,
+                        edgeExclude: Regex,
+                        computeFalsePositiveClosureSize: Boolean,
+                        computeFalseNegativeClosureSize: Boolean
+                       ): PrecisionRecall =
 
-case class PrecisionRecall(
-      actualCallGraph: Map[Method, Map[CallSite, Set[Method]]],
-      predictedCallGraph: Map[Method, Map[CallSite, Set[Method]]],
-      packageScope: Regex,
-      reachableMethodsInclude: Regex,
-      edgeInclude: Regex,
-      reachableMethodsExclude: Regex,
-      edgeExclude: Regex,
-      computeFalsePositiveClosureSize: Boolean,
-      computeFalseNegativeClosureSize: Boolean
-):
-
-    val methods: Classification[Method] = Classification[Method](
-        filterMethods(actualCallGraph.keySet),
-        filterMethods(predictedCallGraph.keySet)
-    )
-
-
-    val edges: EdgeClassification = EdgeClassification(
-        toEdges(actualCallGraph, withCallSiteLineNumber = false),
-        toEdges(predictedCallGraph, withCallSiteLineNumber = false),
-        methods,
-        computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
-    )
-
-    val edgesWithCallSiteLineNumbers: EdgeClassification = EdgeClassification(
-        toEdges(actualCallGraph, withCallSiteLineNumber = true),
-        toEdges(predictedCallGraph, withCallSiteLineNumber = true),
-        methods,
-        computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
-    )
-
-    private def filterMethods(methods: Set[Method]): Set[Method] =
+    def filterMethods(callGraph: Map[Method, Map[CallSite, Set[Method]]]): Set[Method] = {
+        val methods = callGraph.flatMap((method,callSitesMap) => callSitesMap.values.flatten.toSet + method).toSet
         methods.filter(method =>
             packageScope.matches(method.declaringClass) &&
                 reachableMethodsInclude.matches(method.declaringClass) &&
                 !reachableMethodsExclude.matches(method.declaringClass) &&
                 !internalMethod(method))
+    }
 
-    private def internalMethod(method: Method): Boolean =
-        (method.declaringClass.endsWith("$$Lambda") && method.name == "get$Lambda")
+    def internalMethod(method: Method): Boolean =
+        (method.declaringClass.endsWith("$$Lambda") && (method.name == "get$Lambda" || method.name == "<init>"))
 
-    private def toEdges(cg: Map[Method, Map[CallSite, Set[Method]]], withCallSiteLineNumber: Boolean): Set[Edge] =
+    def filterEdges(cg: Map[Method, Map[CallSite, Set[Method]]]): Set[Edge] =
         val result = for {
             (caller, callSiteMap) <- cg;
             (callSite,targets) <- callSiteMap;
             target <- targets
-            line = if(withCallSiteLineNumber) Some(callSite.line) else None
-            edge = Edge(caller = caller, line = line, declaredTarget = callSite.declaredTarget, target = target)
+            edge = Edge(caller = caller, line = Some(callSite.line), declaredTarget = callSite.declaredTarget, target = target)
             if(includeEdge(edge))
         } yield(removeCallSiteInsensitiveLineNumbers(edge))
 
         result.toSet
 
-    private def includeEdge(edge: Edge): Boolean =
+    def includeEdge(edge: Edge): Boolean = {
         val edgeString = s"${edge.caller.declaringClass} -> ${edge.target.declaringClass}";
         (packageScope.matches(edge.caller.declaringClass) || packageScope.matches(edge.target.declaringClass)) &&
-            edgeInclude.matches(edgeString) &&
-            !edgeExclude.matches(edgeString) &&
-            !internalCall(edge)
+        edgeInclude.matches(edgeString) &&
+        !edgeExclude.matches(edgeString) &&
+        !internalCall(edge)
+    }
 
     /** detects internal calls to checkPackageAccess and loadClass that we want to exclude from */
-    private def internalCall(edge: Edge): Boolean = {
+    def internalCall(edge: Edge): Boolean = {
         // Class Loading
         (edge.target.declaringClass == "java.lang.ClassLoader" && edge.target.name == "loadClass" && edge.declaredTarget.name != "loadClass") ||
         (edge.target.declaringClass == "java.lang.ClassLoader" && edge.target.name == "checkPackageAccess" && edge.declaredTarget.name != "checkPackageAccess") ||
@@ -151,7 +131,7 @@ case class PrecisionRecall(
         ((edge.target.declaringClass.startsWith("java.lang.invoke.LambdaForm$MH") || edge.target.declaringClass == "java.lang.invoke.Invokers$Holder")
             && edge.target.name == "linkToTargetMethod"
             && edge.declaredTarget.name != "linkToTargetMethod"
-        ) ||
+            ) ||
         (edge.target.declaringClass == "java.lang.invoke.MethodHandleNatives" && edge.target.name == "linkCallSite" && edge.declaredTarget.name != "linkCallSite") ||
         (edge.target.declaringClass == "java.lang.invoke.MethodHandleNatives" && edge.target.name == "linkMethodHandleConstant" && edge.declaredTarget.name != "linkMethodHandleConstant") ||
         (edge.target.declaringClass == "java.lang.invoke.MethodHandleNatives" && edge.target.name == "findMethodHandleType" && edge.declaredTarget.name != "findMethodHandleType") ||
@@ -160,7 +140,7 @@ case class PrecisionRecall(
         (edge.target.declaringClass.endsWith("$$Lambda") && (edge.target.name == "get$Lambda" || edge.target.name == "<init>"))
     }
 
-    private def isCallSiteInsensitiveComparison(edge: Edge): Boolean = {
+    def isCallSiteInsensitiveComparison(edge: Edge): Boolean = {
         // Static Initializers
         (edge.target.name == "<clinit>") ||
         // Closures
@@ -168,11 +148,76 @@ case class PrecisionRecall(
     }
 
 
-    private def removeCallSiteInsensitiveLineNumbers(edge: Edge): Edge =
+    def removeCallSiteInsensitiveLineNumbers(edge: Edge): Edge =
         if(isCallSiteInsensitiveComparison(edge))
             edge.removeLineNumber
         else
             edge
+
+    def removeCallsToDynamicallyGeneratedClosureClasses(cg: Map[Method, Map[CallSite, Set[Method]]]): Map[Method, Map[CallSite, Set[Method]]] =
+        var callGraph = cg
+        for((caller,callSiteMap) <- cg;
+            (callSite,targets) <- callSiteMap;
+            closure <- targets;
+            if(closure.declaringClass.endsWith("$$Lambda"))) {
+            val closureTargets = for (closureCallSiteMap <- cg.get(closure).toSeq;
+                                      closureTargets <- closureCallSiteMap.values;
+                                      closureTarget <- closureTargets) yield (closureTarget)
+
+            // Copy closure targets to caller
+            callGraph += caller -> (callSiteMap + (callSite -> ((targets - closure) ++ closureTargets)))
+        }
+
+        // Remove dynamically generated closure classes
+        callGraph = callGraph.filter((method,_) => !method.declaringClass.endsWith("$$Lambda"))
+
+        callGraph
+
+    val actualCallGraphWithoutClosures = removeCallsToDynamicallyGeneratedClosureClasses(actualCallGraph)
+
+    val predictedCallGraphWithoutClosures = removeCallsToDynamicallyGeneratedClosureClasses(predictedCallGraph)
+
+    PrecisionRecall(
+        actualCallGraph = PrecisionRecallCallGraph(
+            methods = filterMethods(actualCallGraphWithoutClosures),
+            edges = filterEdges(actualCallGraphWithoutClosures)
+        ),
+        predictedCallGraph = PrecisionRecallCallGraph(
+            methods = filterMethods(predictedCallGraphWithoutClosures),
+            edges = filterEdges(predictedCallGraphWithoutClosures)
+        ),
+        computeFalsePositiveClosureSize = computeFalsePositiveClosureSize,
+        computeFalseNegativeClosureSize = computeFalseNegativeClosureSize
+    )
+
+case class PrecisionRecall(
+      actualCallGraph: PrecisionRecallCallGraph,
+      predictedCallGraph: PrecisionRecallCallGraph,
+      computeFalsePositiveClosureSize: Boolean,
+      computeFalseNegativeClosureSize: Boolean
+):
+
+    val methods: Classification[Method] = Classification[Method](
+        actualCallGraph.methods,
+        predictedCallGraph.methods
+    )
+
+
+    val edges: EdgeClassification = EdgeClassification(
+        actualCallGraph.edges.map(edge => edge.removeLineNumber),
+        predictedCallGraph.edges.map(edge => edge.removeLineNumber),
+        methods,
+        computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
+    )
+
+    val edgesWithCallSiteLineNumbers: EdgeClassification = EdgeClassification(
+        actualCallGraph.edges,
+        predictedCallGraph.edges,
+        methods,
+        computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
+    )
+
+case class PrecisionRecallCallGraph(methods: Set[Method], edges: Set[Edge])
 
 case class Edge(caller: Method, line: Option[Int], declaredTarget: Method, target: Method):
     override def equals(obj: Any): Boolean =

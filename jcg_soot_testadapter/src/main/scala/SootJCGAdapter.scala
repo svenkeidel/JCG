@@ -37,6 +37,7 @@ object SootJCGAdapter extends JavaTestAdapter {
         val o = G.v().soot_options_Options()
         o.set_whole_program(true)
         o.set_keep_line_number(true)
+        o.set_keep_offset(true)
         o.set_allow_phantom_refs(true)
         o.set_include_all(analyzeJDK)
 
@@ -54,7 +55,8 @@ object SootJCGAdapter extends JavaTestAdapter {
 
         o.set_output_format(Options.output_format_none)
 
-        o.setPhaseOption("jb", "use-original-names:true")
+//        o.setPhaseOption("jb", "use-original-names:true")
+        o.setPhaseOption("jb", "model-lambdametafactory-namingstrategy:bytecodeoffset")
 
         o.setPhaseOption("cg", "safe-forname:false")
         o.setPhaseOption("cg", "safe-newinstance:false")

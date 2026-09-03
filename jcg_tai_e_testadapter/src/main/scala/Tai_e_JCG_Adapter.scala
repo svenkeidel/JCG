@@ -53,15 +53,22 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
                 s"-Xmx${Runtime.getRuntime.maxMemory()}",
                 "-jar", taieJarPath.toString) ++
                 (if(mainClass != null) List("--main-class", mainClass) else List()) ++
-                List("-java", javaVersion.toString,
-                "--jre-dir", if(jdkPath.endsWith("jre")) jdkPath.getParent.toString else jdkPath.toString,
-                "--class-path", cp.mkString(":"),
-                "-scope", "ALL",
-                "--output-dir", callGraphDirectory.toString,
-            ) ++ callGraphOptions
+                List(
+                    "-java", javaVersion.toString,
+                    "--jre-dir", if(jdkPath.endsWith("jre")) jdkPath.getParent.toString else jdkPath.toString,
+                    "--class-path", cp.mkString(":"),
+                    "-scope", "ALL",
+                    "--output-dir", callGraphDirectory.toString
+                ) ++ callGraphOptions
             println(command.mkString(" "))
 
-            val exitCode = new ProcessBuilder(command*).inheritIO().start().waitFor()
+            val processBuilder = new ProcessBuilder(command*)
+            processBuilder.redirectErrorStream(true)
+
+            val process = processBuilder.start()
+            process.getInputStream.transferTo(System.out)
+
+            val exitCode = process.waitFor()
             if(exitCode != 0)
                 throw IllegalArgumentException(s"Exit code $exitCode not 0")
 

@@ -152,6 +152,8 @@ object OpalJCGAdatper extends JavaTestAdapter {
             callerOpal <- opalCallGraph.reachableMethods()
             (pc, targets) <- opalCallGraph.calleesOf(callerOpal.method)
             tgt <- targets
+            if(!callerOpal.method.name.startsWith("$string_concat") && !tgt.method.name.startsWith("$string_concat") &&
+               !callerOpal.method.name.startsWith("$newInstance") && !tgt.method.name.startsWith("$newInstance"))
         } {
             val caller = opalMethodToJCGMethod(callerOpal.method)
 

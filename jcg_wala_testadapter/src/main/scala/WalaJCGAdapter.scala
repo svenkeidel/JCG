@@ -10,14 +10,16 @@ import com.fasterxml.jackson.core.{JsonFactory, JsonGenerator}
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.ibm.wala.classLoader.Language.JAVA
-import com.ibm.wala.ipa.callgraph.AnalysisCacheImpl
-import com.ibm.wala.ipa.callgraph.AnalysisOptions
+import com.ibm.wala.ipa.callgraph.{AnalysisCacheImpl, AnalysisOptions, CGNode, CallGraph}
 import com.ibm.wala.ipa.callgraph.impl.Util
-import com.ibm.wala.ipa.cha.ClassHierarchyFactory
+import com.ibm.wala.ipa.cha.{ClassHierarchy, ClassHierarchyFactory}
 import com.ibm.wala.types.MethodReference
 import com.ibm.wala.types.TypeReference
 import com.ibm.wala.util.NullProgressMonitor
 import com.ibm.wala.core.util.config.AnalysisScopeReader
+import com.ibm.wala.ipa.summaries.LambdaSummaryClass
+import com.ibm.wala.shrike.shrikeCT.BootstrapMethodsReader.BootstrapMethod
+import com.ibm.wala.ssa.{SSAInvokeDynamicInstruction, SSAInvokeInstruction}
 
 import scala.collection.immutable.ArraySeq
 
@@ -107,14 +109,16 @@ object WalaJCGAdapter extends JavaTestAdapter {
             } else throw new IllegalArgumentException
         val after = System.nanoTime
 
+        val bootstrapMethods = getBootstrapMethods(walaCallGraph)
+
         val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
         for(callerWala <- walaCallGraph.asScala;
-            caller = walaMethodToJCGMethod(callerWala.getMethod.getReference);
+            caller = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, callerWala.getMethod.getReference);
             callSiteWala <- callerWala.iterateCallSites().asScala;
             targetWala <- walaCallGraph.getPossibleTargets(callerWala, callSiteWala).asScala) {
 
-            val declaredTarget = walaMethodToJCGMethod(callSiteWala.getDeclaredTarget)
+            val declaredTarget = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, callSiteWala.getDeclaredTarget)
 
             val pc = callSiteWala.getProgramCounter
 
@@ -127,7 +131,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
             val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = Some(pc))
 
-            val target = walaMethodToJCGMethod(targetWala.getMethod.getReference)
+            val target = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, targetWala.getMethod.getReference)
 
             val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map())
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
@@ -139,16 +143,61 @@ object WalaJCGAdapter extends JavaTestAdapter {
         after - before
     }
 
-    private def walaMethodToJCGMethod(method: MethodReference): Method = {
+    private def walaMethodToJCGMethod(callGraph: CallGraph, bootstrapMethods: Map[(String,Int), CGNode], method: MethodReference): Method = {
         val name = method.getName.toString
-        val declaringClass = toJavaString(method.getDeclaringClass)
-        val returnType = toJavaString(method.getReturnType)
+        val declaringClass = toJavaString(jvmTypeToLambdaNamingConvention(callGraph, bootstrapMethods, method.getDeclaringClass))
+        val returnType = toJavaString(jvmTypeToLambdaNamingConvention(callGraph, bootstrapMethods, method.getReturnType))
         val indexes = 0 until method.getNumberOfParameters
-        val params = indexes.map(i ⇒ toJavaString(method.getParameterType(i)))
+        val params = indexes.map(i ⇒ toJavaString(jvmTypeToLambdaNamingConvention(callGraph, bootstrapMethods, method.getParameterType(i))))
 
         Method(name = name, declaringClass = declaringClass, returnType = returnType, parameterTypes = ArraySeq.from(params))
-
     }
+
+    private def getBootstrapMethods(callGraph: CallGraph): Map[(String,Int), CGNode] =
+        val result = for {
+            node <- callGraph.asScala
+            if(node.getIR != null)
+            instruction <- node.getIR.getInstructions
+            if(instruction.isInstanceOf[SSAInvokeDynamicInstruction])
+            boostrapMethod = instruction.asInstanceOf[SSAInvokeDynamicInstruction].getBootstrap
+        } yield((node.getMethod.getDeclaringClass.getName.toString.replace('/','$').drop(1),boostrapMethod.getIndexInClassFile) -> node)
+        result.toMap
+
+    private def jvmTypeToLambdaNamingConvention(callGraph: CallGraph, bootstrapMethods: Map[(String,Int), CGNode], typeReference: com.ibm.wala.types.TypeReference): TypeReference =
+        if(typeReference.getName.toString.startsWith("Lwala/lambda$")) {
+            var className = typeReference.getName.toString.stripPrefix("Lwala/lambda$")
+            className = className.take(className.lastIndexOf('$'))
+
+            val boostrapMethodIndex = typeReference.getName.toString.drop(typeReference.getName.toString.lastIndexOf('$') + 1).toInt
+
+            callGraph.getClassHierarchy.lookupClass(typeReference) match {
+                case lambdaSummaryClass: LambdaSummaryClass =>
+                    val invokeInstruction = lambdaSummaryClass.getClass.getDeclaredField("invoke")
+                    invokeInstruction.setAccessible(true)
+                    val invokationInstruction = invokeInstruction.get(lambdaSummaryClass).asInstanceOf[SSAInvokeDynamicInstruction]
+                    bootstrapMethods.get((className,boostrapMethodIndex)) match {
+                        case Some(node) =>
+                            val method = node.getMethod
+                            val converted = JVMType.toLambdaNamingConvention(
+                                className = method.getDeclaringClass.getName.toString.substring(1),
+                                methodName = method.getName.toString,
+                                methodSignature = method.getDescriptor.toString,
+                                pc = invokationInstruction.getProgramCounter
+                            )
+                            TypeReference.findOrCreate(typeReference.getClassLoader, converted.substring(0, converted.length - 1))
+
+                        case None =>
+                            System.err.println(s"Cannot find call graph node for $invokationInstruction")
+                            typeReference
+                    }
+                case _ =>
+                    System.err.println(s"Cannot find lambda summary class for $typeReference")
+                    typeReference
+            }
+        } else {
+            typeReference
+        }
+
 
     private def toJavaString(typeReference: TypeReference): String =
         if (typeReference.isClassType) {

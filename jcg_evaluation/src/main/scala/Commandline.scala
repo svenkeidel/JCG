@@ -247,7 +247,7 @@ object Commandline {
             val predictedCallGraph = try { Util.readReachableMethods(predictedCallGraphPath) } catch { case exc: Exception => throw new RuntimeException(s"Error while parsing static call graph $predictedCallGraphPath", exc) }
             val truthCallGraph = try { Util.readReachableMethods(truthCallGraphPath) } catch { case exc: Exception => throw new RuntimeException(s"Error while parsing dynamic call graph $truthCallGraphPath", exc) }
 
-            val precisionRecall = PrecisionRecall(
+            val precisionRecall = PrecisionRecallJava(
                 actualCallGraph = truthCallGraph.reachableMethods,
                 predictedCallGraph = predictedCallGraph.reachableMethods,
                 packageScope = options.comparisonScope match
