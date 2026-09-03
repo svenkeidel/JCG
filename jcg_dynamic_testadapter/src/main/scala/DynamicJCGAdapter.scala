@@ -147,7 +147,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             instruction match {
                 case INVOKEDYNAMIC(bootstrapMethod: BootstrapMethod, name: String, desc: MethodDescriptor) =>
                     this.copy(declaredTarget = Some(Method(
-                        declaringClass = "<invokeDynamic>",
+                        declaringClass = "LInvokeDynamic;",
                         name = name,
                         returnType = OpalJCGAdatper.jvmTypeToLambdaNamingConvention(desc.returnType.toJVMTypeName),
                         parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](tpe => OpalJCGAdatper.jvmTypeToLambdaNamingConvention(tpe.toJVMTypeName)))
