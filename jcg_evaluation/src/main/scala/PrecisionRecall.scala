@@ -4,6 +4,7 @@ import java.io.{File, FileInputStream}
 import java.nio.file.{Path, Paths}
 import java.util
 import java.util.HashSet as JHashSet
+import scala.collection.compat.immutable.ArraySeq
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
 import scala.math.*
@@ -110,7 +111,7 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]]
             target <- targets
             edge = Edge(caller = caller, line = Some(callSite.line), declaredTarget = callSite.declaredTarget, target = target)
             if(includeEdge(edge))
-        } yield(removeCallSiteInsensitiveLineNumbers(edge))
+        } yield(removeCallerAndLineNumberOfStaticInitializers(edge))
 
         result.toSet
 
@@ -140,17 +141,13 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]]
         (edge.target.declaringClass.endsWith("$$Lambda") && (edge.target.name == "get$Lambda" || edge.target.name == "<init>"))
     }
 
-    def isCallSiteInsensitiveComparison(edge: Edge): Boolean = {
-        // Static Initializers
-        (edge.target.name == "<clinit>") ||
-        // Closures
-        (edge.caller.declaringClass.endsWith("$$Lambda") && edge.target.name.startsWith("lambda$"))
-    }
 
-
-    def removeCallSiteInsensitiveLineNumbers(edge: Edge): Edge =
-        if(isCallSiteInsensitiveComparison(edge))
-            edge.removeLineNumber
+    def removeCallerAndLineNumberOfStaticInitializers(edge: Edge): Edge =
+        if(edge.target.name == "<clinit>")
+            edge.copy(
+                caller = Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty),
+                line = None
+            )
         else
             edge
 
@@ -165,11 +162,24 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]]
                                       closureTarget <- closureTargets) yield (closureTarget)
 
             // Copy closure targets to caller
-            callGraph += caller -> (callSiteMap + (callSite -> ((targets - closure) ++ closureTargets)))
+            val updatedCallSiteMap = callGraph(caller)
+            val updatedTargets = updatedCallSiteMap(callSite)
+
+            callGraph += caller -> (updatedCallSiteMap + (callSite -> (updatedTargets ++ closureTargets)))
         }
 
         // Remove dynamically generated closure classes
         callGraph = callGraph.filter((method,_) => !method.declaringClass.endsWith("$$Lambda"))
+            .view
+            .mapValues(callSiteMap =>
+                callSiteMap
+                    .view
+                    .mapValues(targets => targets.filter(method => !method.declaringClass.endsWith("$$Lambda")))
+                    .filter((_,targets) => targets.nonEmpty)
+                    .toMap
+            )
+            .filter((_,callSiteMap) => callSiteMap.nonEmpty)
+            .toMap
 
         callGraph
 

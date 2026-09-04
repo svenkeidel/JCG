@@ -10,7 +10,7 @@ lazy val commonSettings = Seq(
     organization := "de.opal-project",
     homepage := Some(url("https://bitbucket.org/delors/jcg")),
     licenses := Seq("BSD-2-Clause" -> url("http://opensource.org/licenses/BSD-2-Clause")),
-    resolvers += Resolver.sonatypeCentralSnapshots,
+//    resolvers += Resolver.sonatypeCentralSnapshots,
     version := "1.0",
     publishMavenStyle := true,
     publishTo := MavenPublishing.publishTo(isSnapshot.value),
@@ -78,9 +78,13 @@ lazy val jcg_wala_testadapter = project.settings(
 lazy val jcg_soot_testadapter = project.settings(
     commonSettings,
     name := "JCG Soot Test Adapter",
-    resolvers += "soot snapshot" at "https://ssebuild.sit.fraunhofer.de/nexus/repository/maven-mixed",
-    resolvers += "Google Maven" at "https://maven.google.com/",
-    libraryDependencies += "org.soot-oss" % "soot" % "4.8.0-SNAPSHOT",
+    externalResolvers := Seq(
+        Resolver.defaultLocal,
+        ("soot snapshot" at "https://ssebuild.sit.fraunhofer.de/nexus/repository/maven-mixed").withAllowInsecureProtocol(true),
+        "Google Maven" at "https://maven.google.com/"
+    ),
+
+    libraryDependencies += ("org.soot-oss" % "soot" % "4.8.0-20260904.055152-160"),
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)

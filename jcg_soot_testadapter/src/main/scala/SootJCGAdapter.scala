@@ -92,9 +92,6 @@ object SootJCGAdapter extends JavaTestAdapter {
             throw new IllegalArgumentException(s"unknown algorithm $algorithm")
         }
 
-        val out = new ByteArrayOutputStream()
-        G.v.out = new PrintStream(out)
-
         val scene = Scene.v()
         scene.releaseCallGraph()
         scene.releaseReachableMethods()
