@@ -115,13 +115,19 @@ object DoopAdapter extends JavaTestAdapter {
             println(args.mkString(" "))
 
             val memoryMiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024,2)).round
-            Process(
-                args,
-                Some(doopHome.toFile),
-                "DOOP_HOME" -> doopHome.toAbsolutePath.toString,
-                "DOOP_OUT" -> outDir.toAbsolutePath.toString,
-                "DEFAULT_JVM_OPTS" -> s"\"-DmaxHeapSize=${memoryMiB}m\" \"-DstackSize=1000m\""
-            ).!
+            val processBuilder = new ProcessBuilder(args*)
+            processBuilder.directory(doopHome.toFile)
+            val env = processBuilder.environment()
+            env.put("DOOP_HOME", doopHome.toAbsolutePath.toString)
+            env.put("DOOP_OUT", outDir.toAbsolutePath.toString)
+            env.put("DEFAULT_JVM_OPTS", s"\"-DmaxHeapSize=${memoryMiB}m\" \"-DstackSize=1000m\"")
+            processBuilder.redirectErrorStream(true)
+
+            val process = processBuilder.start()
+            process.getInputStream.transferTo(System.out)
+            val exitCode = process.waitFor()
+            if(exitCode != 0)
+                throw IllegalArgumentException(s"Exit code $exitCode not 0")
 
             val database = Files.list(outDir).findFirst().get().resolve("database")
             val callGraphCsv = database.resolve("CallGraphEdge.csv")
