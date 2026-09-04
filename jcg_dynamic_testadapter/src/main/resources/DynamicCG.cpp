@@ -21,7 +21,7 @@ using namespace std::string_view_literals;
 
 static jvmtiEnv *jvmti = NULL;
 static char *call_graph_file_name = NULL;
-jclass stackOverflowClass;
+jthrowable stack_overflow_throwable;
 jmethodID methodHandleNativesLinkCallSite;
 static std::unordered_map<std::string, std::string> closure_renaming;
 
@@ -321,7 +321,7 @@ static Call_Tree call_tree;
 
 static std::mutex method_entry_mutex;
 static unsigned long long method_calls = 0;
-static const jint max_stack_depth = 2000;
+static const jint max_stack_depth = 1000;
 static jvmtiFrameInfo stack_trace[max_stack_depth];
 static jint stack_size;
 
@@ -405,17 +405,6 @@ void print_method_info(jvmtiEnv *jvmti, jmethodID method, jlocation location) {
         jvmti->Deallocate((unsigned char*)method_name);
         jvmti->Deallocate((unsigned char*)signature);
     }
-}
-
-bool inside_throw_stackoverflow_exception = false;
-void throw_stackoverflow_exception(JNIEnv *jni) {
-    inside_throw_stackoverflow_exception = true;
-
-    if (stackOverflowClass != nullptr) {
-        jni->ThrowNew(stackOverflowClass, "JVMTI Agent: Maximum stack depth reached.");
-    }
-
-    inside_throw_stackoverflow_exception = false;
 }
 
 jvmtiFrameInfo find_closures_invoke_dynamic(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread) {
@@ -556,13 +545,8 @@ void JNICALL ClassPrepare(jvmtiEnv *jvmti,
     if (generic != nullptr) jvmti->Deallocate((unsigned char*)generic);
 }
 
-void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
-    // This early return ensures that we do not get in a deadlock:
-    // MethodEntry -> throw_stackoverflow_exception -> MethodEntry (Deadlock)
-    if (inside_throw_stackoverflow_exception) {
-        return;
-    }
 
+void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID method) {
     std::lock_guard<std::mutex> lock(method_entry_mutex);
 
     try {
@@ -573,8 +557,9 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
             throw std::runtime_error("cannot get stacktrace.");
         }
 
-        if (stack_size == max_stack_depth) {
-            throw_stackoverflow_exception(jni);
+        if (stack_size >= max_stack_depth) {
+            std::cerr << "JVMTI Agent - Maximum stack depth of " << max_stack_depth << " frames reached.\n"sv;
+            jni->Throw(stack_overflow_throwable);
         } else {
             call_tree.add_stack_trace(jvmti, stack_trace, stack_size);
 
@@ -598,21 +583,31 @@ void JNICALL MethodEntry(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread, jmethodID
     } catch (...) {
         std::cerr << "JVMTI Agent - MethodEntry: unknown exception\n"sv;
     }
-
 }
 
 void JNICALL VMInit(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread) {
     std::cout << "JVMTI Agent - VMInit\n"sv;
 
-    stackOverflowClass = jni->FindClass("java/lang/StackOverflowError");
+    jclass stackOverflowClass = jni->FindClass("java/lang/StackOverflowError");
+    jmethodID stackOverflowCtor = jni->GetMethodID(stackOverflowClass, "<init>", "()V");
+    jobject stackOverflowLocalRef = jni->NewObject(stackOverflowClass, stackOverflowCtor);
+    stack_overflow_throwable = (jthrowable) jni->NewGlobalRef(stackOverflowLocalRef);
+
+
+    if (stack_overflow_throwable == NULL)
+        std::cerr << "JVMTI Agent - Could create stackoverflow object\n"sv;
 
     jclass methodHandleNatives = jni->FindClass("java/lang/invoke/MethodHandleNatives");
-
-    methodHandleNativesLinkCallSite = jni->GetStaticMethodID(
+    jmethodID methodHandleNativesLinkCallSiteLocalRef = jni->GetStaticMethodID(
         methodHandleNatives,
         "linkCallSite",
         "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/invoke/MemberName;"
     );
+    methodHandleNativesLinkCallSite = (jmethodID)jni->NewGlobalRef((jobject)methodHandleNativesLinkCallSiteLocalRef);
+    jni->DeleteLocalRef((jobject)methodHandleNativesLinkCallSiteLocalRef);
+
+    if (methodHandleNativesLinkCallSite == NULL)
+        std::cerr << "JVMTI Agent - Could not find MethodHandleNatives.linkCallSite\n"sv;
 }
 
 JNIEXPORT void JNICALL VMDeath(jvmtiEnv *jvmti, JNIEnv* jni) {
