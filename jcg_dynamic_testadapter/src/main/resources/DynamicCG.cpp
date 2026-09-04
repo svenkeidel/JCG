@@ -593,18 +593,15 @@ void JNICALL VMInit(jvmtiEnv *jvmti, JNIEnv* jni, jthread thread) {
     jobject stackOverflowLocalRef = jni->NewObject(stackOverflowClass, stackOverflowCtor);
     stack_overflow_throwable = (jthrowable) jni->NewGlobalRef(stackOverflowLocalRef);
 
-
     if (stack_overflow_throwable == NULL)
         std::cerr << "JVMTI Agent - Could create stackoverflow object\n"sv;
 
     jclass methodHandleNatives = jni->FindClass("java/lang/invoke/MethodHandleNatives");
-    jmethodID methodHandleNativesLinkCallSiteLocalRef = jni->GetStaticMethodID(
+    methodHandleNativesLinkCallSite = jni->GetStaticMethodID(
         methodHandleNatives,
         "linkCallSite",
         "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/invoke/MemberName;"
     );
-    methodHandleNativesLinkCallSite = (jmethodID)jni->NewGlobalRef((jobject)methodHandleNativesLinkCallSiteLocalRef);
-    jni->DeleteLocalRef((jobject)methodHandleNativesLinkCallSiteLocalRef);
 
     if (methodHandleNativesLinkCallSite == NULL)
         std::cerr << "JVMTI Agent - Could not find MethodHandleNatives.linkCallSite\n"sv;
