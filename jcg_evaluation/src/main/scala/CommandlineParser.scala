@@ -286,7 +286,10 @@ object CommandlineParser {
             case Some(config) =>
                 // If no adapter is specified, all adapters of specified language are used
                 if (config.adapters.isEmpty) {
-                    val adapters = ALL_ADAPTERS.filter(_.language.toLowerCase == config.language.toLowerCase)
+                    val adapters = ALL_ADAPTERS.filter(adapter =>
+                        adapter.language.toLowerCase == config.language.toLowerCase &&
+                        !adapter.isInstanceOf[DynamicJCGAdapter.type]
+                    )
                     config.copy(adapters = adapters)
                 } else {
                     config
