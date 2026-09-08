@@ -24,8 +24,8 @@ case class CommandlineOptions(
                                  callGraphsDir:   Path              = Paths.get("."),
                                  adapters:        List[TestAdapter] = List.empty,
                                  projects:        Seq[String]       = Seq.empty,
-                                 projectFilter:   String            = "",
-                                 algorithmFilter: String            = "",
+                                 projectFilter:   Regex             = Regex(".*"),
+                                 algorithmFilter: Regex             = Regex(".*"),
                                  timeout:         Int               = -1,
                                  compress:        Boolean           = false,
                                  debug:           Boolean           = false,
@@ -86,10 +86,10 @@ object CommandlineParser {
                 .valueName("<projects>")
                 .maxOccurs(1).optional(),
 
-            opt[String]("project-prefix")
-                .action((prefix, c) => c.copy(projectFilter = prefix))
-                .text("Defines a prefix-based filter for the input project's name. If applied only projects starting with the <prefix> will be processed.")
-                .valueName("prefix")
+            opt[String]("project")
+                .action((regex, c) => c.copy(projectFilter = Regex(regex)))
+                .text("Defines a regex-based filter for the input project's name. If applied only projects matching the <regex> will be processed.")
+                .valueName("regex")
                 .maxOccurs(1).optional(),
 
             opt[Path]("call-graphs-directory")
@@ -97,11 +97,12 @@ object CommandlineParser {
                 .text("Defines the directory where call graphs are written to or read from.")
                 .required().maxOccurs(1),
 
-            opt[String]("algorithm-prefix")
-                .action((prefix, c) => c.copy(algorithmFilter = prefix))
-                .text("Defines a prefix-based filter for the adapters call-graph algorithms names. (e.g. filter only for RTAs)")
-                .valueName("prefix")
+            opt[String]("algorithm")
+                .action((regex, c) => c.copy(algorithmFilter = Regex(regex)))
+                .text("Defines a regex-based filter for the adapters call-graph algorithms names. (e.g. filter only for RTAs)")
+                .valueName("regex")
                 .maxOccurs(1).optional(),
+
             opt[String]("adapter")
                 .action { (adapterName, c) =>
                     ALL_ADAPTERS.find(_.frameworkName.toLowerCase == adapterName.toLowerCase) match {
@@ -162,7 +163,7 @@ object CommandlineParser {
                 .action((_,c) => c.copy(
                     action = Action.ConvertDynamicCallGraphToCSV,
                     adapters = List(DynamicJCGAdapter),
-                    algorithmFilter = "Dynamic"
+                    algorithmFilter = Regex("Dynamic")
                 ))
                 .text("converts dynamic call graph to CSV format."),
 
@@ -170,7 +171,7 @@ object CommandlineParser {
                 .action((_,c) => c.copy(
                     action = Action.DynamicStackTraces,
                     adapters = List(DynamicJCGAdapter),
-                    algorithmFilter = "Dynamic"
+                    algorithmFilter = Regex("Dynamic")
                 ))
                 .text("returns all stack traces that end in the given method.")
                 .children(

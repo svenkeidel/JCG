@@ -30,7 +30,7 @@ object Commandline {
                 .filter { path =>
                     if(path.toString.endsWith(".conf")) {
                         val project = path.getFileName.toString.stripSuffix(".conf")
-                        project.startsWith(options.projectFilter) && (options.projects.isEmpty || options.projects.contains(project))
+                        options.projectFilter.matches(project) && (options.projects.isEmpty || options.projects.contains(project))
                     } else {
                         false
                     }
@@ -49,7 +49,8 @@ object Commandline {
 
             for {
                 adapter <- options.adapters
-                cgAlgo <- adapter.possibleAlgorithms.filter(_.toLowerCase().startsWith(options.algorithmFilter.toLowerCase()))
+                cgAlgo <- adapter.possibleAlgorithms
+                if(options.algorithmFilter.matches(cgAlgo))
             } {
                 val callGraphsDirectory = options.callGraphsDir.resolve(adapter.frameworkName, cgAlgo)
                 Files.createDirectories(callGraphsDirectory)

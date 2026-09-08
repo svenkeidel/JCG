@@ -13,8 +13,8 @@ case class ReachableMethods(reachableMethods: Map[Method, Map[CallSite, Set[Meth
 
     def writeCsv(writer: Writer): Unit = {
         writer.write("caller|line|pc|declared-target|target\n")
-        for((caller,callSites) <- reachableMethods;
-            (callSite,targets) <- callSites;
+        for((caller,callSites) <- reachableMethods.toIndexedSeq.sortBy(_._1);
+            (callSite,targets) <- callSites.toIndexedSeq.sortBy(_._1);
             target <- targets) {
             writer.write(caller.toString + "|")
             writer.write(callSite.line + "|")
@@ -75,6 +75,7 @@ case class CallSite(declaredTarget: Method, line: Int, pc: Option[Int])
 
 given CallSiteReads: Reads[CallSite] = Json.reads[CallSite]
 given CallSiteWrites: Writes[CallSite] = Json.writes[CallSite]
+given CallSiteOrdering: Ordering[CallSite] = Ordering.by(callSite => (callSite.line, callSite.pc))
 
 /**
  * A method is represented using the `name`, the `declaringClass`, its `returnType` and its
@@ -116,6 +117,7 @@ object Method {
 
 given MethodReads: Reads[Method] = Json.reads[Method]
 given MethodWrites: Writes[Method] = Json.writes[Method]
+given MethodOrdering: Ordering[Method] = Ordering.by(method => method.toString)
 
 object JVMType {
     def toLambdaNamingConvention(className: String, methodName: String, methodSignature: String, pc: Int): String =

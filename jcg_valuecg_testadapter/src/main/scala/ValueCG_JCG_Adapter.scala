@@ -54,7 +54,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
 
         // Read and convert generated callgraph files// Read and convert generated callgraph files
         try {
-            generateCGforFile(inputFile, algorithm, runnerDir, configDir, outDir, mainClass, classPath, jdkPath, analyzeJDK)
+            computeCallgraph(inputFile, algorithm, runnerDir, configDir, outDir, mainClass, classPath, javaVersion, jdkPath, analyzeJDK)
 
             val valDroidCallGraph = SerializedCallgraph.readFromFileCompressed(outDir.resolve("ValDroid.json.gz").toFile)
 
@@ -107,7 +107,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
     }
 
     @throws[Exception]
-    private def generateCGforFile(inputFile: File, algorithm: String, runnerDir: String, configDir: String, outDir: Path, mainClass: String, classPath: Array[String], jdkPath: Path, analyzeJdk: Boolean) = {
+    private def computeCallgraph(inputFile: File, algorithm: String, runnerDir: String, configDir: String, outDir: Path, mainClass: String, classPath: Array[String], javaVersion: Int, jdkPath: Path, analyzeJdk: Boolean) = {
         // Create output directory for this file
         val out = outDir.toAbsolutePath
         Files.createDirectories(out)
@@ -119,21 +119,36 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
             case _ => throw new RuntimeException("Invalid algorithm: " + algorithm)
         }
         val templatePath = Paths.get(configDir, templateFile)
-        var configContent = new String(Files.readAllBytes(templatePath)).replace("OUTPUT", out.toString)
+        var configContent = new String(Files.readAllBytes(templatePath))
+        configContent = configContent.replace("OUTPUT", out.toString)
+
         if (mainClass != null) configContent += "\n\nJavaAnalyzer.EntryPoint=" + "<" + mainClass + ": void main(java.lang.String[])>"
         else configContent += "\n\nJavaAnalyzer.ValueFinder.Static.CG.LibraryMode=true"
-        val serverConf = out.resolve("server.conf")
-        Files.write(serverConf, configContent.getBytes)
+
+        configContent += s"\nSootImporter.Java.JRE.Path=${jdkPath.toAbsolutePath}"
+
+        val analysisConfig = out.resolve("analysis.conf")
+        Files.write(analysisConfig, configContent.getBytes)
+
+        println("\nAnalysis Config:")
+        println(configContent)
+        println()
+        println()
 
         val zip = zipJars(inputFile, classPath)
 
         try {
             // Execute analysis process
-            val pb = new ProcessBuilder("./AnalysisStandaloneRunner", "--configfile", serverConf.toString, zip.toString)
-            pb.inheritIO
+            val pb = new ProcessBuilder("./AnalysisStandaloneRunner", "--configfile", analysisConfig.toString, zip.toString)
             pb.directory(new File(runnerDir))
             pb.redirectErrorStream(true)
-            val exitCode = pb.start.waitFor
+
+            val process = pb.start
+            process.getInputStream.transferTo(System.out)
+
+            val exitCode = process.waitFor
+
+
             if (exitCode != 0) throw new RuntimeException("Analysis failed with exit code: " + exitCode)
             System.out.printf("------ Files written: ------\n")
             Files.list(out).filter((path: Path) => path.toString.endsWith(".json") || path.toString.endsWith(".json.gz")).forEach((e: Path) => System.out.println(e.toString))
