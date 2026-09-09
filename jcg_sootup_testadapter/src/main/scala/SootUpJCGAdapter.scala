@@ -1,36 +1,21 @@
-import java.io.File
 import java.io.Writer
-import scala.collection.JavaConverters.*
+import java.nio.file.{Files}
+
+import scala.collection.compat.immutable.ArraySeq
 import scala.collection.mutable
-import play.api.libs.json.Json
-import qilin.driver.PTAFactory
-import qilin.driver.PTAPattern
-import qilin.pta.PTAConfig
+import scala.jdk.CollectionConverters.*
+
 import sootup.callgraph.CallGraph
 import sootup.callgraph.CallGraphAlgorithm
 import sootup.callgraph.ClassHierarchyAnalysisAlgorithm
 import sootup.callgraph.RapidTypeAnalysisAlgorithm
 import sootup.core.cache.provider.FullCacheProvider
-import sootup.core.inputlocation.AnalysisInputLocation
 import sootup.core.model.SourceType
 import sootup.core.signatures.MethodSignature
-import sootup.core.types.ArrayType
-import sootup.core.types.ClassType
-import sootup.core.types.PrimitiveType.BooleanType
-import sootup.core.types.PrimitiveType.ByteType
-import sootup.core.types.PrimitiveType.CharType
-import sootup.core.types.PrimitiveType.DoubleType
-import sootup.core.types.PrimitiveType.FloatType
-import sootup.core.types.PrimitiveType.IntType
-import sootup.core.types.PrimitiveType.LongType
-import sootup.core.types.PrimitiveType.ShortType
-import sootup.core.types.Type
 import sootup.core.types.VoidType
 import sootup.java.bytecode.frontend.inputlocation.*
 import sootup.java.core.views.{JavaView, LoadingStrategy}
 
-import java.nio.file.{Files, Paths}
-import scala.collection.compat.immutable.ArraySeq
 
 object SootUpJCGAdapter extends JavaTestAdapter {
 
@@ -66,6 +51,8 @@ object SootUpJCGAdapter extends JavaTestAdapter {
         val inputLocations = List(JavaClassPathAnalysisInputLocation(inputDirPath), jreInputLocation)
             ++ classPath.map(JavaClassPathAnalysisInputLocation(_)).toList
 
+        Time.settleDown()
+
         val irGenerationStart = Time()
         val view = new JavaView(inputLocations.asJava, new FullCacheProvider, LoadingStrategy.eager())
         val irGenerationEnd = Time()
@@ -85,6 +72,8 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             }
             cg
         }
+
+        Time.settleDown()
 
         val callGraphComputationStart = Time()
         val sootUpCallGraph: CallGraph = algorithm match {

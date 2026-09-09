@@ -1,30 +1,30 @@
 import java.io.File
 import java.io.Writer
 import java.net.URL
-import scala.collection.JavaConverters.*
+
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import com.typesafe.config.ConfigValueFactory
-import org.opalj.br.{ClassType, ConfigKeyPrefix, DeclaredMethod, Type}
-import org.opalj.br.analyses.{DeclaredMethods, DeclaredMethodsKey, Project, ProjectInformationKey, SomeProject}
+
+import org.opalj.br.{DeclaredMethod, Type}
+import org.opalj.br.analyses.{DeclaredMethods, DeclaredMethodsKey, Project, SomeProject}
 import org.opalj.br.analyses.Project.JavaClassFileReader
 import org.opalj.br.fpcf.FPCFAnalysisScheduler
 import org.opalj.br.fpcf.analyses.pointsto.TamiFlexKey
-import org.opalj.fpcf.{FPCFAnalysesManagerKey, FinalEP, PropertyStore, PropertyStoreKey}
+import org.opalj.fpcf.FPCFAnalysesManagerKey
 import org.opalj.br.instructions.{INVOKEDYNAMIC, MethodInvocationInstruction}
-import org.opalj.tac.cg.{AllocationSiteBasedPointsToCallGraphKey, CFA_1_0_CallGraphKey, CFA_1_1_CallGraphKey, CHACallGraphKey, CTACallGraphKey, CallGraph, CallGraphKey, FTACallGraphKey, MTACallGraphKey, RTACallGraphKey, RemoveTacaiProvider, TypeBasedPointsToCallGraphKey, TypeIteratorKey, XTACallGraphKey}
+import org.opalj.tac.cg.{AllocationSiteBasedPointsToCallGraphKey, CFA_1_0_CallGraphKey, CFA_1_1_CallGraphKey, CHACallGraphKey, CTACallGraphKey, CallGraphKey, FTACallGraphKey, MTACallGraphKey, RTACallGraphKey, RemoveTacaiProvider, TypeBasedPointsToCallGraphKey, TypeIteratorKey, XTACallGraphKey}
 import org.opalj.tac.fpcf.analyses.cg.{CallGraphAnalysisScheduler, TypeIterator}
-import org.opalj.br.fpcf.properties.cg.Callees
-import org.opalj.br.fpcf.properties.cg.NoCallees
-import org.opalj.br.fpcf.properties.cg.NoCalleesDueToNotReachableMethod
 import org.opalj.si.ProjectInformationKeys
 import org.opalj.tac.fpcf.analyses.cg.reflection.{ReflectionRelatedCallsAnalysisScheduler, TamiFlexCallGraphAnalysisScheduler}
 import org.opalj.tac.fpcf.analyses.{EagerTACAIProvider, LazyTACAIProvider}
 
-import java.nio.file.Paths
+
 import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 
 /**
  * A [[JavaTestAdapter]] for the FPCF-based call graph analyses of OPAL.
@@ -106,6 +106,9 @@ object OpalJCGAdatper extends JavaTestAdapter {
             Seq.empty
         )
 
+        System.gc()
+        Thread.sleep(3.seconds.toMillis)
+
         val irGenerationStart = Time()
         val (ps,_) = project.get(FPCFAnalysesManagerKey).runAll(
             EagerTACAIProvider
@@ -124,6 +127,9 @@ object OpalJCGAdatper extends JavaTestAdapter {
             case "1-0-CFA" ⇒ CFA_1_0_CallGraphKey
             case "1-1-CFA" ⇒ CFA_1_1_CallGraphKey
         }
+
+        System.gc()
+        Thread.sleep(3.seconds.toMillis)
 
         val callGraphComputationStart = Time()
         val opalCallGraph = project.get(RemoveTacaiProvider(callGraphKey))

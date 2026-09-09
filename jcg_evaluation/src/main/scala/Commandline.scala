@@ -8,8 +8,7 @@ import scala.concurrent.Future
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.TimeoutException
-import scala.concurrent.duration.Duration
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{Duration, DurationInt, SECONDS}
 import scala.util.Using
 import scala.jdk.StreamConverters.*
 import scala.util.matching.compat.Regex

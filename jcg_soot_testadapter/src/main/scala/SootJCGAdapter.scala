@@ -1,9 +1,9 @@
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.PrintStream
 import java.io.Writer
+
 import scala.jdk.CollectionConverters.*
 import scala.collection.mutable
+
 import soot.G
 import soot.PackManager
 import soot.Scene
@@ -58,18 +58,6 @@ object SootJCGAdapter extends JavaTestAdapter {
 //        o.setPhaseOption("jb", "use-original-names:true")
         o.setPhaseOption("jb", "model-lambdametafactory-namingstrategy:bytecodeoffset")
 
-        val scene = Scene.v()
-        scene.releaseCallGraph()
-        scene.releaseReachableMethods()
-        scene.releasePointsToAnalysis()
-        scene.releaseActiveHierarchy()
-        scene.releaseFastHierarchy()
-
-        val irGenerationStart = Time()
-        scene.loadNecessaryClasses()
-        PackManager.v().runBodyPacks()
-        val irGenerationEnd = Time()
-
         o.setPhaseOption("cg", "safe-forname:false")
         o.setPhaseOption("cg", "safe-newinstance:false")
         //o.setPhaseOption("cg", "types-for-invoke:true")
@@ -103,6 +91,23 @@ object SootJCGAdapter extends JavaTestAdapter {
         } else {
             throw new IllegalArgumentException(s"unknown algorithm $algorithm")
         }
+
+        val scene = Scene.v()
+        scene.releaseCallGraph()
+        scene.releaseReachableMethods()
+        scene.releasePointsToAnalysis()
+        scene.releaseActiveHierarchy()
+        scene.releaseFastHierarchy()
+
+        Time.settleDown()
+
+        val irGenerationStart = Time()
+        scene.loadNecessaryClasses()
+        PackManager.v().runBodyPacks()
+        val irGenerationEnd = Time()
+
+
+        Time.settleDown()
 
         val callGraphComputationStart = Time()
         PackManager.v().runPacks()

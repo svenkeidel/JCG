@@ -87,7 +87,8 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
         val cache = new AnalysisCacheImpl
 
-        // Cache IR before time measurement
+        Time.settleDown()
+
         val irGenerationStart = Time()
         for(clazz <- classHierarchy.iterator().asScala;
             method <- clazz.getDeclaredMethods.iterator().asScala) {
@@ -96,6 +97,8 @@ object WalaJCGAdapter extends JavaTestAdapter {
             } catch { case (_: Throwable) => }
         }
         val irGenerationEnd = Time()
+
+        Time.settleDown()
 
         val callGraphComputationStart = Time()
         val walaCallGraph =

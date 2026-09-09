@@ -1,21 +1,19 @@
+import java.nio.file.Files
+
 import pascal.taie.analysis.graph.callgraph.{CallGraph, CallGraphBuilder}
-import pascal.taie.{World, WorldBuilder}
-import pascal.taie.config.{AnalysisConfig, AnalysisPlanner, ConfigManager, Configs, Options, Plan, PlanConfig, Scope}
+import pascal.taie.World
+import pascal.taie.config.{AnalysisConfig, AnalysisPlanner, ConfigManager, Configs, Options, PlanConfig, Scope}
 import pascal.taie.frontend.java.JavaWorldBuilder
 import pascal.taie.ir.stmt.Invoke
 import pascal.taie.language.classes.JMethod
-import pascal.taie.util.collection.Lists
+import pascal.taie.analysis.AnalysisManager
 
-import java.nio.file.{Files, Path, Paths}
-import java.text.ParseException
+import org.apache.commons.io.FileUtils
+
 import scala.collection.compat.immutable.ArraySeq
 import scala.collection.mutable
-import scala.io.Source
-import scala.util.Using
 import scala.jdk.CollectionConverters.*
-import play.api.libs.json.{Json, __}
-import org.apache.commons.io.FileUtils
-import pascal.taie.analysis.AnalysisManager
+import scala.concurrent.duration.*
 
 
 object Tai_e_JCG_Adapter extends JavaTestAdapter {
@@ -75,9 +73,13 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
 
             val builder = new JavaWorldBuilder
 
+            Time.settleDown()
+
             val irGenerationStart = Time()
             builder.build(options)
             val irGenerationEnd = Time()
+
+            Time.settleDown()
 
             val callGraphComputationStart = Time()
             new AnalysisManager(plan).execute()
