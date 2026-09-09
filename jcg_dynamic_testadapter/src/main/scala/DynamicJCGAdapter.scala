@@ -33,7 +33,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions = AdapterOptions.makeEmptyOptions()
-    ): Long = {
+    ): AnalysisResult = {
         val testCase = adapterOptions.getString("testCase")
         val outputDirectory = adapterOptions.getPath("outputDirectory")
         val mainClass = adapterOptions.getString("mainClass")
@@ -94,13 +94,13 @@ object DynamicJCGAdapter extends JavaTestAdapter {
             //            processBuilder.environment().put("LD_PRELOAD", "/usr/lib/x86_64-linux-gnu/libasan.so.8")
             //            processBuilder.environment().put("ASAN_OPTIONS", "detect_leaks=1:allow_user_segv_handler=1")
 
-            val before = System.nanoTime
+            val before = Time()
 
             val process = processBuilder.start()
             process.getInputStream.transferTo(System.out)
             val exitCode = process.waitFor()
             println(s"Dynamic Callgraph Process Exit Code: $exitCode")
-            val after = System.nanoTime
+            val after = Time()
 
             println(s"Read call graph from $callGraphPath with ${Files.size(callGraphPath).toDouble / math.pow(10, 6)}MB")
             Using(GZIPInputStream(BufferedInputStream(FileInputStream(callGraphPath.toFile)))) { input =>
@@ -122,7 +122,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
                 reachableMethods.writeCsv(output)
             }.get
 
-            after - before
+            AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = after - before)
         } catch {
             case exc: Throwable =>
                 exc.printStackTrace(System.err)

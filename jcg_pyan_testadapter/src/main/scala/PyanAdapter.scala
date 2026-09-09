@@ -51,7 +51,7 @@ object PyanAdapter extends PyTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         val files =
             new File(inputDirPath).listFiles()(0).listFiles().filter(_.getName.endsWith(".py")).map(_.getAbsolutePath)
         val mainFilePath = if (files.length == 1) files(0) else files.find(_.contains("main")).getOrElse(files(0))
@@ -64,7 +64,7 @@ object PyanAdapter extends PyTestAdapter {
         val args = Seq(mainFilePath, "--annotated", "-u", "--dot", "--file", tempFile.getAbsolutePath)
         if (debug) println(s"[DEBUG] executing ${(Seq(command) ++ args).mkString(" ")}")
 
-        val start = System.nanoTime()
+        val start = Time()
         val processSucceeded =
             try {
                 sys.process.Process(Seq(command) ++ args).!!
@@ -74,7 +74,7 @@ object PyanAdapter extends PyTestAdapter {
                     println(s"${Console.RED}[ERROR]: $command failed for $mainFilePath${Console.RESET}")
                     false
             }
-        val end = System.nanoTime()
+        val end = Time()
         if (debug) println(s"Call graph for $inputDirPath generated in ${end - start} ns")
 
         // process output and convert to common call graph format
@@ -90,7 +90,7 @@ object PyanAdapter extends PyTestAdapter {
             }
         }
 
-        end - start
+        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
     }
 
     private def toCommonFormat(cgFile: File): String = {

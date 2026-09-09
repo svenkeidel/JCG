@@ -27,7 +27,7 @@ object SootJCGAdapter extends JavaTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         G.reset()
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
@@ -57,6 +57,18 @@ object SootJCGAdapter extends JavaTestAdapter {
 
 //        o.setPhaseOption("jb", "use-original-names:true")
         o.setPhaseOption("jb", "model-lambdametafactory-namingstrategy:bytecodeoffset")
+
+        val scene = Scene.v()
+        scene.releaseCallGraph()
+        scene.releaseReachableMethods()
+        scene.releasePointsToAnalysis()
+        scene.releaseActiveHierarchy()
+        scene.releaseFastHierarchy()
+
+        val irGenerationStart = Time()
+        scene.loadNecessaryClasses()
+        PackManager.v().runBodyPacks()
+        val irGenerationEnd = Time()
 
         o.setPhaseOption("cg", "safe-forname:false")
         o.setPhaseOption("cg", "safe-newinstance:false")
@@ -92,17 +104,9 @@ object SootJCGAdapter extends JavaTestAdapter {
             throw new IllegalArgumentException(s"unknown algorithm $algorithm")
         }
 
-        val scene = Scene.v()
-        scene.releaseCallGraph()
-        scene.releaseReachableMethods()
-        scene.releasePointsToAnalysis()
-        scene.releaseActiveHierarchy()
-        scene.releaseFastHierarchy()
-
-        val before = System.nanoTime
-        scene.loadNecessaryClasses()
+        val callGraphComputationStart = Time()
         PackManager.v().runPacks()
-        val after = System.nanoTime
+        val callGraphComputationEnd = Time()
 
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
@@ -141,7 +145,10 @@ object SootJCGAdapter extends JavaTestAdapter {
 
         G.reset()
 
-        after - before
+        AnalysisResult.Success(
+            irGeneration = irGenerationEnd - irGenerationStart,
+            callGraphComputation = callGraphComputationEnd - callGraphComputationStart
+        )
     }
 
     private def sootMethodToJCGMethod(method: SootMethod): Method = {

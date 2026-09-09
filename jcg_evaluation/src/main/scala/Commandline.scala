@@ -114,21 +114,19 @@ object Commandline {
                             )
                         } catch {
                             case e: Throwable =>
-                                println(s"exception in project ${projectSpec.name}")
-                                e.printStackTrace()
-                                -1
+                                AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
                         }
                     }
 
                     try {
-                        val elapsed = tryAwait(options.timeout, future)
-                        reportTiming(callGraphsDirectory, testCase, elapsed)
+                        val runningTime = tryAwait(options.timeout, future)
+                        reportTiming(callGraphsDirectory, testCase, runningTime)
                     } catch {
                         case _: TimeoutException =>
-                            println(s"Timeout after ${options.timeout} seconds")
-                            val result = Timeout
-                            reportTiming(callGraphsDirectory, testCase, -1)
-                        case e: Throwable => println(e.getMessage)
+                            reportTiming(callGraphsDirectory, testCase,
+                                AnalysisResult.Timeout(options.timeout.seconds.toNanos))
+                        case e: Throwable =>
+                            println(e.getMessage)
                     } finally {
                         System.gc()
                     }
@@ -389,12 +387,11 @@ object Commandline {
         case "false-negatives" => Json.toJson(classification.falseNegative)
     }
 
-    private def reportTiming(experimentOutputPath: Path, testCase: String, elapsed: Long): Unit = {
-        val seconds = elapsed / 1000000000d
-        val pw = new PrintWriter(experimentOutputPath.resolve(s"${testCase}-timings.txt").toFile)
-        pw.write(s"$seconds sec.")
+    private def reportTiming(experimentOutputPath: Path, testCase: String, analysisResult: AnalysisResult): Unit = {
+        val pw = new PrintWriter(experimentOutputPath.resolve(s"${testCase}-timings.json").toFile)
+        pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
         pw.close()
-        println(s"analysis took $seconds sec.")
+        println(analysisResult.toString)
     }
 
 
@@ -409,8 +406,8 @@ object Commandline {
     @throws[InterruptedException](classOf[InterruptedException])
     protected def tryAwait(
         timeout: Int,
-        future: Future[Long]
-    ): Long = {
+        future: Future[AnalysisResult]
+    ): AnalysisResult = {
         val duration =
             if (timeout >= 0)
                 timeout.seconds

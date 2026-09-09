@@ -65,7 +65,7 @@ object Code2flowPyCallGraphAdapter extends PyTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         val tempFile = new File(s"temp/$frameworkName/$algorithm/out.json")
         tempFile.getParentFile.mkdirs()
 
@@ -73,7 +73,7 @@ object Code2flowPyCallGraphAdapter extends PyTestAdapter {
         if (debug) println(s"[DEBUG] executing ${(Seq(command) ++ args).mkString(" ")}")
 
         // Generate call graph
-        val start = System.nanoTime()
+        val start = Time()
         val processSucceeded =
             try {
                 sys.process.Process(Seq(command) ++ args).!!
@@ -83,7 +83,7 @@ object Code2flowPyCallGraphAdapter extends PyTestAdapter {
                     println(s"${Console.RED}[Error]: $inputDirPath failed to generate${Console.RESET}")
                     false
             }
-        val end = System.nanoTime()
+        val end = Time()
 
         // Process output and convert to common call graph format
         if (processSucceeded) {
@@ -96,7 +96,7 @@ object Code2flowPyCallGraphAdapter extends PyTestAdapter {
             }
         }
 
-        end - start
+        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
     }
 
     /**

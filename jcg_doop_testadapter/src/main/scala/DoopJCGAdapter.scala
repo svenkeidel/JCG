@@ -74,7 +74,7 @@ object DoopAdapter extends JavaTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         val env = System.getenv
 
         val mainClass = adapterOptions.getString("mainClass")
@@ -141,11 +141,10 @@ object DoopAdapter extends JavaTestAdapter {
             )
             reachableMethods.writeCsv(output)
 
-            val factsGenerationTime = Files.readString(database.resolve("facts-generation-time.txt")).toLong
-            val analysisExecutionTime = Files.readString(database.resolve("analysis-execution-time.txt")).toLong
-            val totalTime = factsGenerationTime + analysisExecutionTime
+            val factsGenerationTime = Time.fromNanoseconds(Files.readString(database.resolve("facts-generation-time.txt")).toLong)
+            val analysisExecutionTime = Time.fromNanoseconds(Files.readString(database.resolve("analysis-execution-time.txt")).toLong)
 
-            totalTime
+            AnalysisResult.Success(irGeneration = factsGenerationTime, callGraphComputation = analysisExecutionTime)
         } finally {
             FileUtils.deleteDirectory(outDir.toFile)
         }

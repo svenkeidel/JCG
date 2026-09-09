@@ -87,7 +87,7 @@ object TAJSJCGAdapter extends JSTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         if (command.isEmpty) throw new Exception(
             "TAJS command not available. Make sure you set the tajs variable in tajs.properties correctly."
         )
@@ -98,7 +98,7 @@ object TAJSJCGAdapter extends JSTestAdapter {
             )).head
         val args = Seq("-callgraph", inputFilePath, "-uneval")
         if (debug) println(s"[DEBUG] executing ${args.mkString(" ")}")
-        val start = System.nanoTime()
+        val start = Time()
         val processSucceeded =
             try {
                 sys.process.Process(command.get ++ args).!!
@@ -108,7 +108,7 @@ object TAJSJCGAdapter extends JSTestAdapter {
                     println(s"${Console.RED}[Error]: $inputFilePath failed to generate${Console.RESET}")
                     false
             }
-        val end = System.nanoTime()
+        val end = Time()
 
         if (processSucceeded) {
             try {
@@ -119,7 +119,8 @@ object TAJSJCGAdapter extends JSTestAdapter {
                     println(s"${Console.RED}[Error]: Failed to process and write the call graph for $inputFilePath${Console.RESET}")
             }
         }
-        end - start
+
+        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
     }
 
     private def toCommonFormat(cgFile: File): String = {

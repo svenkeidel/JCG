@@ -134,7 +134,9 @@ lazy val jcg_doop_testadapter = project.settings(
 lazy val jcg_tai_e_testadapter = project.settings(
     commonSettings,
     name := "JCG Tai-E Test Adapter",
+    libraryDependencies += "net.pascal-lab" % "tai-e" % "0.5.5-SNAPSHOT" exclude("org.soot-oss", "soot"),
     libraryDependencies += "commons-io" % "commons-io" % commonsIoVersion,
+    resolvers += Resolver.mavenLocal,
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons, jcg_annotations)

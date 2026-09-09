@@ -63,7 +63,7 @@ object JellyCallGraphAdapter extends JSTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         val tempFile = new File(s"temp/$frameworkName/$algorithm/out.html")
         tempFile.getParentFile.mkdirs()
 
@@ -71,7 +71,7 @@ object JellyCallGraphAdapter extends JSTestAdapter {
         if (debug) println(s"[DEBUG] executing ${(Seq(command) ++ args).mkString(" ")}")
 
         // Generate call graph
-        val start = System.nanoTime()
+        val start = Time()
         val processSucceeded =
             try {
                 sys.process.Process(Seq(command) ++ args).!!
@@ -81,7 +81,7 @@ object JellyCallGraphAdapter extends JSTestAdapter {
                     println(s"${Console.RED}[Error]: $inputDirPath failed to generate${Console.RESET}")
                     false
             }
-        val end = System.nanoTime()
+        val end = Time()
 
         // Process output and convert to common call graph format
         if (processSucceeded) {
@@ -96,7 +96,7 @@ object JellyCallGraphAdapter extends JSTestAdapter {
             }
         }
 
-        end - start
+        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
     }
 
     /**

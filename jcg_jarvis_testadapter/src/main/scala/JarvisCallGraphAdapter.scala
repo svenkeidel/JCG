@@ -74,7 +74,7 @@ object JarvisCallGraphAdapter extends PyTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         print(s"Generating call graph for $inputDirPath... ")
         val files =
             new File(inputDirPath).listFiles()(0).listFiles().filter(_.getName.endsWith(".py")).map(_.getAbsolutePath)
@@ -88,7 +88,7 @@ object JarvisCallGraphAdapter extends PyTestAdapter {
         val args = Seq("--decy", "--precision", mainFilePath, "-o", tempFile.getAbsolutePath)
         if (debug) println(s"[DEBUG] executing ${(Seq(command) ++ args).mkString(" ")}")
 
-        val start = System.nanoTime()
+        val start = Time()
         val processSucceeded =
             try {
                 sys.process.Process(command.get ++ args).!!
@@ -98,7 +98,7 @@ object JarvisCallGraphAdapter extends PyTestAdapter {
                     println(s"${Console.RED}[ERROR]: $command failed for $mainFilePath${Console.RESET}")
                     false
             }
-        val end = System.nanoTime()
+        val end = Time()
         if (debug) println(s"Call graph for $inputDirPath generated in ${end - start} ns")
 
         // process output and convert to common call graph format
@@ -114,7 +114,7 @@ object JarvisCallGraphAdapter extends PyTestAdapter {
             }
         }
 
-        end - start
+        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end-start)
     }
 
     private def toCommonFormat(cgFile: File): String = {

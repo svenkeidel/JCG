@@ -60,7 +60,7 @@ object JSCallGraphAdapter extends JSTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         // delete and create temp folder
         val tempFile = new File(s"temp/$frameworkName/$algorithm/out.json")
         tempFile.getParentFile.mkdirs()
@@ -75,16 +75,16 @@ object JSCallGraphAdapter extends JSTestAdapter {
         )
         if (debug) println(s"[DEBUG] executing ${(Seq(command) ++ args).mkString(" ")}")
 
-        val start = System.nanoTime()
+        val start = Time()
         try {
             sys.process.Process(Seq(command) ++ args).!!
         } catch {
             case e: Exception => println(s"[Error]: $command failed for $inputDirPath")
         }
-        val end = System.nanoTime()
+        val end = Time()
         Using(Source.fromFile(tempFile)) { source => output.write(Json.prettyPrint(Json.parse(source.mkString))) }
 
         if (debug) println(s"Call graph for $inputDirPath generated in ${end - start} ns")
-        end - start
+        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
     }
 }

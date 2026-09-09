@@ -34,7 +34,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
         inputDirPath: String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
         val JDKPath = adapterOptions.getPath("JDKPath")
@@ -87,7 +87,17 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
         val cache = new AnalysisCacheImpl
 
-        val before = System.nanoTime
+        // Cache IR before time measurement
+        val irGenerationStart = Time()
+        for(clazz <- classHierarchy.iterator().asScala;
+            method <- clazz.getDeclaredMethods.iterator().asScala) {
+            try {
+                cache.getIR(method)
+            } catch { case (_: Throwable) => }
+        }
+        val irGenerationEnd = Time()
+
+        val callGraphComputationStart = Time()
         val walaCallGraph =
             if (algorithm.contains("0-CFA")) {
                 val ncfaBuilder = Util.makeZeroCFABuilder(JAVA, options, cache, classHierarchy)
@@ -107,7 +117,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
                 CG.init(entrypoints)
                 CG
             } else throw new IllegalArgumentException
-        val after = System.nanoTime
+        val callGraphComputationEnd = Time()
 
         val bootstrapMethods = getBootstrapMethods(walaCallGraph)
 
@@ -140,7 +150,10 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
         ReachableMethods(jcgCallGraph).writeCsv(output)
 
-        after - before
+        AnalysisResult.Success(
+            irGeneration = irGenerationEnd - irGenerationStart,
+            callGraphComputation = callGraphComputationEnd - callGraphComputationStart
+        )
     }
 
     private def walaMethodToJCGMethod(callGraph: CallGraph, bootstrapMethods: Map[(String,Int), CGNode], method: MethodReference): Method = {

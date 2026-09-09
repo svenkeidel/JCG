@@ -6,33 +6,25 @@ import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import com.typesafe.config.ConfigValueFactory
 import org.opalj.br.{ClassType, ConfigKeyPrefix, DeclaredMethod, Type}
-import org.opalj.br.analyses.DeclaredMethods
-import org.opalj.br.analyses.DeclaredMethodsKey
-import org.opalj.br.analyses.Project
+import org.opalj.br.analyses.{DeclaredMethods, DeclaredMethodsKey, Project, ProjectInformationKey, SomeProject}
 import org.opalj.br.analyses.Project.JavaClassFileReader
-import org.opalj.fpcf.PropertyStoreKey
+import org.opalj.br.fpcf.FPCFAnalysisScheduler
+import org.opalj.br.fpcf.analyses.pointsto.TamiFlexKey
+import org.opalj.fpcf.{FPCFAnalysesManagerKey, FinalEP, PropertyStore, PropertyStoreKey}
 import org.opalj.br.instructions.{INVOKEDYNAMIC, MethodInvocationInstruction}
-import org.opalj.fpcf.FinalEP
-import org.opalj.fpcf.PropertyStore
-import org.opalj.tac.cg.AllocationSiteBasedPointsToCallGraphKey
-import org.opalj.tac.cg.CFA_1_0_CallGraphKey
-import org.opalj.tac.cg.CFA_1_1_CallGraphKey
-import org.opalj.tac.cg.CHACallGraphKey
-import org.opalj.tac.cg.CTACallGraphKey
-import org.opalj.tac.cg.FTACallGraphKey
-import org.opalj.tac.cg.MTACallGraphKey
-import org.opalj.tac.cg.RTACallGraphKey
-import org.opalj.tac.cg.TypeBasedPointsToCallGraphKey
-import org.opalj.tac.cg.TypeIteratorKey
-import org.opalj.tac.cg.XTACallGraphKey
-import org.opalj.tac.fpcf.analyses.cg.TypeIterator
+import org.opalj.tac.cg.{AllocationSiteBasedPointsToCallGraphKey, CFA_1_0_CallGraphKey, CFA_1_1_CallGraphKey, CHACallGraphKey, CTACallGraphKey, CallGraph, CallGraphKey, FTACallGraphKey, MTACallGraphKey, RTACallGraphKey, RemoveTacaiProvider, TypeBasedPointsToCallGraphKey, TypeIteratorKey, XTACallGraphKey}
+import org.opalj.tac.fpcf.analyses.cg.{CallGraphAnalysisScheduler, TypeIterator}
 import org.opalj.br.fpcf.properties.cg.Callees
 import org.opalj.br.fpcf.properties.cg.NoCallees
 import org.opalj.br.fpcf.properties.cg.NoCalleesDueToNotReachableMethod
+import org.opalj.si.ProjectInformationKeys
+import org.opalj.tac.fpcf.analyses.cg.reflection.{ReflectionRelatedCallsAnalysisScheduler, TamiFlexCallGraphAnalysisScheduler}
+import org.opalj.tac.fpcf.analyses.{EagerTACAIProvider, LazyTACAIProvider}
 
 import java.nio.file.Paths
 import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * A [[JavaTestAdapter]] for the FPCF-based call graph analyses of OPAL.
@@ -51,7 +43,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
         val JDKPath = adapterOptions.getPath("JDKPath")
@@ -114,37 +106,30 @@ object OpalJCGAdatper extends JavaTestAdapter {
             Seq.empty
         )
 
-        /*val performInvocationsDomain = classOf[DefaultPerformInvocationsDomainWithCFGAndDefUse[_]]
+        val irGenerationStart = Time()
+        val (ps,_) = project.get(FPCFAnalysesManagerKey).runAll(
+            EagerTACAIProvider
+        )
+        val irGenerationEnd = Time()
 
-        project.updateProjectInformationKeyInitializationData(AIDomainFactoryKey) {
-            case None               ⇒ Set(performInvocationsDomain)
-            case Some(requirements) ⇒ requirements + performInvocationsDomain
-        }*/
-
-        val before = System.nanoTime()
-
-        implicit val ps: PropertyStore = project.get(PropertyStoreKey)
-
-        // run call graph, along with extra analyses e.g. for reflection
-        val opalCallGraph = algorithm match {
-            case "CHA" ⇒ project.get(CHACallGraphKey)
-            case "RTA" ⇒ project.get(RTACallGraphKey)
-            case "MTA" ⇒ project.get(MTACallGraphKey)
-            case "CTA" ⇒ project.get(CTACallGraphKey)
-            case "FTA" ⇒ project.get(FTACallGraphKey)
-            case "XTA" ⇒ project.get(XTACallGraphKey)
-            case "0-CFA" ⇒ project.get(TypeBasedPointsToCallGraphKey)
-            case "0-1-CFA" ⇒ project.get(AllocationSiteBasedPointsToCallGraphKey)
-            case "1-0-CFA" ⇒ project.get(CFA_1_0_CallGraphKey)
-            case "1-1-CFA" ⇒ project.get(CFA_1_1_CallGraphKey)
+        val callGraphKey = algorithm match {
+            case "CHA" ⇒ CHACallGraphKey
+            case "RTA" ⇒ RTACallGraphKey
+            case "MTA" ⇒ MTACallGraphKey
+            case "CTA" ⇒ CTACallGraphKey
+            case "FTA" ⇒ FTACallGraphKey
+            case "XTA" ⇒ XTACallGraphKey
+            case "0-CFA" ⇒ TypeBasedPointsToCallGraphKey
+            case "0-1-CFA" ⇒ AllocationSiteBasedPointsToCallGraphKey
+            case "1-0-CFA" ⇒ CFA_1_0_CallGraphKey
+            case "1-1-CFA" ⇒ CFA_1_1_CallGraphKey
         }
 
+        val callGraphComputationStart = Time()
+        val opalCallGraph = project.get(RemoveTacaiProvider(callGraphKey))
         implicit val typeIterator: TypeIterator = project.get(TypeIteratorKey)
-
-        // start the computation of the call graph
         implicit val declaredMethods: DeclaredMethods = project.get(DeclaredMethodsKey)
-
-        val after = System.nanoTime()
+        val callGraphComputationEnd = Time()
 
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
@@ -201,7 +186,10 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
         ps.shutdown()
 
-        after - before
+        AnalysisResult.Success(
+            irGeneration = irGenerationEnd - irGenerationStart,
+            callGraphComputation = callGraphComputationEnd - callGraphComputationStart
+        )
     }
 
     private def opalMethodToJCGMethod(method: DeclaredMethod): Method =
@@ -278,4 +266,40 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
         result.toString
     }
+}
+
+package org.opalj.tac.cg {
+
+    final class RemoveTacaiProvider(callGraphKey: CallGraphKey) extends CallGraphKey:
+        override def requirements(project: SomeProject): ProjectInformationKeys =
+            val requirements = callGraphKey.requirements(project)
+            val lazyTacaiKeys = LazyTACAIProvider.requiredProjectInformation.map(_.uniqueId).toSet
+            requirements.filter(key => !lazyTacaiKeys.contains(key.uniqueId))
+
+        override def allCallGraphAnalyses(project: SomeProject): Iterable[FPCFAnalysisScheduler] =
+            val analyses: ArrayBuffer[FPCFAnalysisScheduler] = ArrayBuffer()
+
+            analyses += CallGraphAnalysisScheduler
+            analyses ++= callGraphSchedulers(project)
+            analyses ++= registeredAnalyses(project)
+
+            if (TamiFlexKey.isConfigured(project)) {
+                analyses -= ReflectionRelatedCallsAnalysisScheduler
+                analyses += TamiFlexCallGraphAnalysisScheduler
+            }
+
+            analyses
+
+        override protected def registeredAnalyses(project: SomeProject): collection.Seq[FPCFAnalysisScheduler] =
+            val callGraphClass = callGraphKey.getClass
+            val registeredAnalysesMethod = callGraphClass.getDeclaredMethod("registeredAnalyses", project.getClass)
+            registeredAnalysesMethod.setAccessible(true)
+            registeredAnalysesMethod.invoke(callGraphKey, project).asInstanceOf[collection.Seq[FPCFAnalysisScheduler]]
+
+        override def getTypeIterator(project: SomeProject): TypeIterator = callGraphKey.getTypeIterator(project)
+
+        override protected[cg] def callGraphSchedulers(project: SomeProject): Iterable[FPCFAnalysisScheduler] =
+            callGraphKey.callGraphSchedulers(project)
+
+        override def toString: String = callGraphKey.toString
 }

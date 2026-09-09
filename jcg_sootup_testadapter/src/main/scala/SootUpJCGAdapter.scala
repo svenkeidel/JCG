@@ -10,6 +10,7 @@ import sootup.callgraph.CallGraph
 import sootup.callgraph.CallGraphAlgorithm
 import sootup.callgraph.ClassHierarchyAnalysisAlgorithm
 import sootup.callgraph.RapidTypeAnalysisAlgorithm
+import sootup.core.cache.provider.FullCacheProvider
 import sootup.core.inputlocation.AnalysisInputLocation
 import sootup.core.model.SourceType
 import sootup.core.signatures.MethodSignature
@@ -26,7 +27,7 @@ import sootup.core.types.PrimitiveType.ShortType
 import sootup.core.types.Type
 import sootup.core.types.VoidType
 import sootup.java.bytecode.frontend.inputlocation.*
-import sootup.java.core.views.JavaView
+import sootup.java.core.views.{JavaView, LoadingStrategy}
 
 import java.nio.file.{Files, Paths}
 import scala.collection.compat.immutable.ArraySeq
@@ -44,7 +45,7 @@ object SootUpJCGAdapter extends JavaTestAdapter {
         inputDirPath:   String,
         output:         Writer,
         adapterOptions: AdapterOptions
-    ): Long = {
+    ): AnalysisResult = {
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
         val JDKPath = adapterOptions.getPath("JDKPath")
@@ -65,7 +66,9 @@ object SootUpJCGAdapter extends JavaTestAdapter {
         val inputLocations = List(JavaClassPathAnalysisInputLocation(inputDirPath), jreInputLocation)
             ++ classPath.map(JavaClassPathAnalysisInputLocation(_)).toList
 
-        val view = new JavaView(inputLocations.asJava)
+        val irGenerationStart = Time()
+        val view = new JavaView(inputLocations.asJava, new FullCacheProvider, LoadingStrategy.eager())
+        val irGenerationEnd = Time()
 
         // todo no-bodies-for-excluded in case of !analyzeJDK
 
@@ -83,12 +86,12 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             cg
         }
 
-        val before = System.nanoTime
+        val callGraphComputationStart = Time()
         val sootUpCallGraph: CallGraph = algorithm match {
             case CHA => computeCG(new ClassHierarchyAnalysisAlgorithm(view))
             case RTA => computeCG(new RapidTypeAnalysisAlgorithm(view))
         }
-        val after = System.nanoTime
+        val callGraphComputationEnd = Time()
 
         val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
@@ -122,7 +125,7 @@ object SootUpJCGAdapter extends JavaTestAdapter {
 
         ReachableMethods(jcgCallGraph).writeCsv(output)
 
-        after - before
+        AnalysisResult.Success(irGeneration = irGenerationEnd - irGenerationStart, callGraphComputation = callGraphComputationEnd - callGraphComputationStart)
     }
 
     private def sootMethodToJCGMethod(method: MethodSignature): Method = {

@@ -2,6 +2,7 @@ import com.google.gson.{Gson, GsonBuilder}
 import org.apache.commons.io.FileUtils
 import org.jcg.valuecgadapter.ValueCG_TestAdapterImpl.MethodTarget
 import org.jcg.valuecgadapter.{SerializedCallgraph, ValueCG_TestAdapterImpl}
+import play.api.libs.json.Json
 
 import java.io.{File, FileInputStream, FileOutputStream, IOException}
 import java.nio.file.{Files, Path, Paths}
@@ -34,7 +35,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
                                 target: String,
                                 output: java.io.Writer,
                                 adapterOptions: AdapterOptions
-                            ): Long = {
+                            ): AnalysisResult = {
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
         val javaVersion = adapterOptions.getInt("javaVersion")
@@ -89,9 +90,9 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
 
             ReachableMethods(callGraph).writeCsv(output)
 
-            val timing = Files.readString(outDir.resolve("ValDroid-timing.txt")).toLong
+            val timing = Time.fromNanoseconds(Files.readString(outDir.resolve("ValDroid-timing.txt")).toLong)
 
-            timing
+            AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = timing)
         } catch {
             case e: Exception => throw new RuntimeException("Failed to process " + inputFile, e)
         } finally {
