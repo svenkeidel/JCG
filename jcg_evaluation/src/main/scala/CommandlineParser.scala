@@ -6,11 +6,12 @@ import scopt.OParser
 import scala.util.matching.compat.Regex
 
 enum Action:
-    case Analyze
+    case ComputeCallGraph
+    case MeasureTime
+    case MeasureMemory
     case Assess
     case Size
     case PrecisionRecall
-    case JDKCallbacks
     case ConvertDynamicCallGraphToCSV
     case DynamicStackTraces
 
@@ -19,9 +20,9 @@ enum ComparisonScope:
     case Package
 
 case class CommandlineOptions(
-                                 action:          Action            = Action.Analyze,
+                                 action:          Action            = Action.ComputeCallGraph,
                                  projectsDir:     Path              = Paths.get("."),
-                                 callGraphsDir:   Path              = Paths.get("."),
+                                 outputDirectory:   Path              = Paths.get("."),
                                  adapters:        List[TestAdapter] = List.empty,
                                  projects:        Seq[String]       = Seq.empty,
                                  projectFilter:   Regex             = Regex(".*"),
@@ -29,10 +30,11 @@ case class CommandlineOptions(
                                  timeout:         Int               = -1,
                                  compress:        Boolean           = false,
                                  debug:           Boolean           = false,
-                                 parallel:        Boolean           = false,
                                  language:        String            = "",
                                  analyzeJdk:      Boolean           = false,
                                  analysisArgs:    String            = "",
+                                 warmupRuns:      Int               = 0,
+                                 measurementRuns:   Int               = 1,
 
                                  overwriteCallgraph:        Boolean = false,
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
@@ -92,9 +94,9 @@ object CommandlineParser {
                 .valueName("regex")
                 .maxOccurs(1).optional(),
 
-            opt[Path]("call-graphs-directory")
-                .action { (dir, c) => c.copy(callGraphsDir = dir) }
-                .text("Defines the directory where call graphs are written to or read from.")
+            opt[Path]("output-directory")
+                .action { (dir, c) => c.copy(outputDirectory = dir) }
+                .text("Defines the directory where call graphs, time measurements, and memory measurements are written to.")
                 .required().maxOccurs(1),
 
             opt[String]("algorithm")
@@ -132,8 +134,8 @@ object CommandlineParser {
                 .hidden()
                 .optional(),
 
-            cmd("analyze")
-                .action((_,c) => c.copy(action = Action.Analyze))
+            cmd("compute-callgraph")
+                .action((_,c) => c.copy(action = Action.ComputeCallGraph))
                 .text("run call graph analyses on projects")
                 .children(
                     opt[Unit]("overwrite-callgraph")
@@ -151,13 +153,50 @@ object CommandlineParser {
                         .action((_, c) => c.copy(compress = true))
                         .text("Compress call graphs")
                         .optional(),
-                    opt[Unit]("parallel")
-                        .action((_, c) => c.copy(parallel = true))
-                        .hidden()
-                        .optional(),
                     opt[Unit]("analyze-jdk")
                         .action((_,c) => c.copy(analyzeJdk = true))
                 ),
+
+            cmd("measure-time")
+                .action((_,c) => c.copy(action = Action.MeasureTime))
+                .text("run call graph analyses on projects")
+                .children(
+                    opt[String]("analysis-args")
+                        .action((args, c) => c.copy(analysisArgs = args))
+                        .text("additional arguments passed to the call graph analyses")
+                        .valueName("args"),
+                    opt[String]("warmup-runs")
+                        .action((n, c) => c.copy(warmupRuns = Integer.valueOf(n)))
+                        .valueName("n")
+                        .maxOccurs(1).optional(),
+                    opt[String]("measurement-runs")
+                        .action((n, c) => c.copy(measurementRuns = Integer.valueOf(n)))
+                        .valueName("n")
+                        .maxOccurs(1).optional(),
+                    opt[String]("timeout")
+                        .action((t, c) => c.copy(timeout = Integer.valueOf(t)))
+                        .valueName("timeout")
+                        .maxOccurs(1).optional(),
+                    opt[Unit]("analyze-jdk")
+                        .action((_,c) => c.copy(analyzeJdk = true))
+                ),
+
+            cmd("measure-memory")
+                .action((_,c) => c.copy(action = Action.MeasureMemory))
+                .text("run call graph analyses on projects")
+                .children(
+                    opt[String]("analysis-args")
+                        .action((args, c) => c.copy(analysisArgs = args))
+                        .text("additional arguments passed to the call graph analyses")
+                        .valueName("args"),
+                    opt[String]("timeout")
+                        .action((t, c) => c.copy(timeout = Integer.valueOf(t)))
+                        .valueName("timeout")
+                        .maxOccurs(1).optional(),
+                    opt[Unit]("analyze-jdk")
+                        .action((_,c) => c.copy(analyzeJdk = true))
+                ),
+
 
             cmd("convert-dynamic-callgraph-to-csv")
                 .action((_,c) => c.copy(
@@ -259,18 +298,6 @@ object CommandlineParser {
                       .text("")
                       .maxOccurs(1)
                       .optional()
-                ),
-
-            cmd("jdk-callbacks")
-                .action((_,c) => c.copy(action = Action.JDKCallbacks))
-                .text("Computes the call backs from JDK into application code.")
-                .children(
-                    opt[String]("reachable-methods-include")
-                        .action((reachableMethodsInclude, c) => c.copy(reachableMethodsInclude = Regex(reachableMethodsInclude)))
-                        .text("Regular expression that filters the reachable methods that belong to application code.")
-                        .valueName("regex")
-                        .maxOccurs(1)
-                        .required(),
                 ),
 
             checkConfig(c =>

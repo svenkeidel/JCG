@@ -6,7 +6,7 @@ import scala.collection.mutable
 import scala.io.Source
 import scala.sys.process.Process
 import org.apache.commons.io.FileUtils
-import play.api.libs.json.Json
+import play.api.libs.json.{JsNull, Json}
 import org.opalj.br.ClassType
 
 import scala.collection.compat.immutable.ArraySeq
@@ -69,25 +69,42 @@ object DoopAdapter extends JavaTestAdapter {
             case _ => throw IllegalArgumentException(s"Unknown call graph algorithm $algorithm")
         }
 
-    override def serializeCG(
-        algorithm:      String,
-        inputDirPath:   String,
-        output:         Writer,
-        adapterOptions: AdapterOptions
-    ): AnalysisResult = {
-        val env = System.getenv
-
+    override def warmup(algorithm: String, inputDirPath: String, adapterOptions: AdapterOptions): AnalysisResult = AnalysisResult.Success(JsNull)
+    override def measureTime(algorithm: String, inputDirPath: String, adapterOptions: AdapterOptions): AnalysisResult =
         val mainClass = adapterOptions.getString("mainClass")
         val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getPath("JDKPath")
         val javaVersion = adapterOptions.getInt("javaVersion")
+        val jdkPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
+        val target = adapterOptions.getString("target")
 
+        configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
+            generateIR(configuration)
+            val callGraph = computeCallGraph(configuration)
+
+            val factsGenerationTime = Time.fromNanoseconds(Files.readString(callGraph.database.resolve("facts-generation-time.txt")).toLong)
+            val analysisExecutionTime = Time.fromNanoseconds(Files.readString(callGraph.database.resolve("analysis-execution-time.txt")).toLong)
+
+            AnalysisResult.irGenerationAndCallGraphComputationTime(irGeneration = factsGenerationTime, callGraphComputation = analysisExecutionTime)
+        }
+
+    override type Configuration = DoopConfiguration
+    case class DoopConfiguration(processBuilder: ProcessBuilder, outDir: Path)
+
+    override def configure[A](
+         algorithm: String,
+         target: String,
+         mainClass: String,
+         classPath: Array[String],
+         javaVersion: Int,
+         jdkPath: Path,
+         analyzeJDK: Boolean)
+    (actionWithConfiguration: Configuration => A): A =
+        val env = System.getenv
         assert(env.containsKey("DOOP_HOME"))
         val doopHome = Paths.get(env.get("DOOP_HOME"))
         assert(Files.exists(doopHome))
         assert(Files.isDirectory(doopHome))
-
 
         val outDir = Files.createTempDirectory(null)
 
@@ -100,12 +117,12 @@ object DoopAdapter extends JavaTestAdapter {
                 ++ Array(
                 "--timeout", "1440",
                 "--platform", s"java_$javaVersion",
-                "--use-local-java-platform", JDKPath.toAbsolutePath.toString,
-                "-i", inputDirPath)
+                "--use-local-java-platform", jdkPath.toAbsolutePath.toString,
+                "-i", target)
                 ++ classPath
 
             if (analyzeJDK) {
-               args ++= JRELocation.getAllJREJars(JDKPath).map(_.toString)
+                args ++= JRELocation.getAllJREJars(jdkPath).map(_.toString)
             }
 
             if (mainClass != null)
@@ -114,8 +131,8 @@ object DoopAdapter extends JavaTestAdapter {
 
             println(args.mkString(" "))
 
-            val memoryMiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024,2)).round
-            val processBuilder = new ProcessBuilder(args*)
+            val memoryMiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024, 2)).round
+            val processBuilder = new ProcessBuilder(args *)
             processBuilder.directory(doopHome.toFile)
             val env = processBuilder.environment()
             env.put("DOOP_HOME", doopHome.toAbsolutePath.toString)
@@ -123,39 +140,31 @@ object DoopAdapter extends JavaTestAdapter {
             env.put("DEFAULT_JVM_OPTS", s"\"-DmaxHeapSize=${memoryMiB}m\" \"-DstackSize=1000m\"")
             processBuilder.redirectErrorStream(true)
 
-            val process = processBuilder.start()
-            process.getInputStream.transferTo(System.out)
-            val exitCode = process.waitFor()
-            if(exitCode != 0)
-                throw IllegalArgumentException(s"Exit code $exitCode not 0")
+            actionWithConfiguration(DoopConfiguration(processBuilder, outDir = outDir))
 
-            val database = Files.list(outDir).findFirst().get().resolve("database")
-            val callGraphCsv = database.resolve("CallGraphEdge.csv")
-            val methodInvocationLinesCsv = database.resolve("MethodInvocation-Line.facts")
-            val reachableMethods = parseCallGraph(
-                callGraphCsv,
-                methodInvocationLinesCsv,
-                new File(inputDirPath),
-                JDKPath.toFile,
-                output
-            )
-            reachableMethods.writeCsv(output)
-
-            val factsGenerationTime = Time.fromNanoseconds(Files.readString(database.resolve("facts-generation-time.txt")).toLong)
-            val analysisExecutionTime = Time.fromNanoseconds(Files.readString(database.resolve("analysis-execution-time.txt")).toLong)
-
-            AnalysisResult.Success(irGeneration = factsGenerationTime, callGraphComputation = analysisExecutionTime)
         } finally {
             FileUtils.deleteDirectory(outDir.toFile)
         }
 
-    }
+    override def generateIR(configuration: Configuration): Unit = {}
 
+    override type CallGraph = DoopCallGraph
+    case class DoopCallGraph(database: Path, methodInvocationLinesCSV: Path, callGraphCSV: Path)
 
+    override def computeCallGraph(configuration: Configuration): CallGraph =
+        val process = configuration.processBuilder.start()
+        process.getInputStream.transferTo(System.out)
+        val exitCode = process.waitFor()
+        if (exitCode != 0)
+            throw IllegalArgumentException(s"Exit code $exitCode not 0")
+        val database = Files.list(configuration.outDir).findFirst().get().resolve("database")
+        val callGraphCsv = database.resolve("CallGraphEdge.csv")
+        val methodInvocationLinesCsv = database.resolve("MethodInvocation-Line.facts")
+        DoopCallGraph(database, methodInvocationLinesCsv, callGraphCsv)
 
-    private def parseCallGraph(callGraphPath: Path, methodInvocationLinesPath: Path, tgtJar: File, jreDir: File, output: Writer): ReachableMethods = {
+    override def callGraphToJCG(configuration: Configuration, callGraph: DoopCallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] =
         Using.Manager { use =>
-            val methodInvocationCsv = use(Source.fromFile(methodInvocationLinesPath.toFile))
+            val methodInvocationCsv = use(Source.fromFile(callGraph.methodInvocationLinesCSV.toFile))
             val methodInvocationLines: Map[String, Int] =
                 methodInvocationCsv.getLines().map { methodInvocationLineNumber =>
                     val Array(methodInvocation, lineNumber) = methodInvocationLineNumber.split("\t")
@@ -163,56 +172,50 @@ object DoopAdapter extends JavaTestAdapter {
                 }.toMap
 
 
-            val callGraphCsv = use(Source.fromFile(callGraphPath.toFile))
-            parseCallGraph(callGraphCsv, methodInvocationLines)
-        }.get
-    }
+            val callGraphCsv = use(Source.fromFile(callGraph.callGraphCSV.toFile))
+            val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-    private def parseCallGraph(doopEdges: Source, methodInvocationLineNumbers: Map[String, Int]): ReachableMethods = {
-        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+            for (line <- callGraphCsv.getLines()) {
+                val Array(_, callerDeclaredTgtNumber, _, tgtStr) = line.split("\t")
+                try {
+                    val (callerStr, declaredTgtStr, numberString) =
+                        if (callerDeclaredTgtNumber.contains("native ")) {
+                            val Array(callerStr, declaredTgt) = callerDeclaredTgtNumber.split("/")
+                            val Array(declardTargetClass, declaredTargetReturnType, declaredTargetMethodSig) = declaredTgt.slice(declaredTgt.indexOf("<") + 1, declaredTgt.indexOf(">")).split(' ')
+                            val declaredTarget = declardTargetClass.stripSuffix(":") + "." + declaredTargetMethodSig.split('(')(0)
+                            (callerStr, declaredTarget, "0")
+                        } else if ("<main-thread-init>/0" == callerDeclaredTgtNumber) {
+                            ("<java.lang.Thread: java.lang.Thread currentThread()>", "java.lang.Thread.<init>", "0")
+                        } else if ("<thread-group-init>/0" == callerDeclaredTgtNumber) {
+                            ("<java.lang.Thread: java.lang.Thread currentThread()>", "java.lang.ThreadGroup.<init>", "0")
+                        } else if (callerDeclaredTgtNumber.startsWith("<register-finalize")) {
+                            val array = callerDeclaredTgtNumber.drop("<register-finalize ".length).dropRight("  >".length).split("/")
+                            (array(array.length - 3), array(array.length - 2), array(array.length - 1))
+                        } else {
+                            val Array(callerStr, declaredTgt, numberString) = callerDeclaredTgtNumber.split("/")
+                            (callerStr, declaredTgt, numberString)
+                        }
 
-        for (line <- doopEdges.getLines()) {
-            val Array(_, callerDeclaredTgtNumber, _, tgtStr) = line.split("\t")
-            try {
-                val (callerStr, declaredTgtStr, numberString) =
-                    if (callerDeclaredTgtNumber.contains("native ")) {
-                        val Array(callerStr, declaredTgt) = callerDeclaredTgtNumber.split("/")
-                        val Array(declardTargetClass, declaredTargetReturnType, declaredTargetMethodSig) = declaredTgt.slice(declaredTgt.indexOf("<") + 1, declaredTgt.indexOf(">")).split(' ')
-                        val declaredTarget = declardTargetClass.stripSuffix(":") + "." + declaredTargetMethodSig.split('(')(0)
-                        (callerStr, declaredTarget, "0")
-                    } else if ("<main-thread-init>/0" == callerDeclaredTgtNumber) {
-                        ("<java.lang.Thread: java.lang.Thread currentThread()>", "java.lang.Thread.<init>", "0")
-                    } else if ("<thread-group-init>/0" == callerDeclaredTgtNumber) {
-                        ("<java.lang.Thread: java.lang.Thread currentThread()>", "java.lang.ThreadGroup.<init>", "0")
-                    } else if (callerDeclaredTgtNumber.startsWith("<register-finalize")) {
-                        val array = callerDeclaredTgtNumber.drop("<register-finalize ".length).dropRight("  >".length).split("/")
-                        (array(array.length - 3), array(array.length - 2), array(array.length - 1))
-                    } else {
-                        val Array(callerStr, declaredTgt, numberString) = callerDeclaredTgtNumber.split("/")
-                        (callerStr, declaredTgt, numberString)
-                    }
+                    val caller = toMethod(callerStr.slice(1, callerStr.length - 1))
 
-                val caller = toMethod(callerStr.slice(1, callerStr.length - 1))
+                    val (declaredClass, declaredMethodName) = declaredTgtStr.splitAt(declaredTgtStr.lastIndexOf("."))
+                    //                val declaredTarget = Method(declaringClass = declaredClass, name = declaredMethodName.drop(1), returnType = "<undefined>", parameterTypes = ArraySeq.empty)
+                    val declaredTarget = Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
+                    val line = methodInvocationLines.getOrElse(callerDeclaredTgtNumber, -1)
+                    val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = None)
 
-                val (declaredClass, declaredMethodName) = declaredTgtStr.splitAt(declaredTgtStr.lastIndexOf("."))
-//                val declaredTarget = Method(declaringClass = declaredClass, name = declaredMethodName.drop(1), returnType = "<undefined>", parameterTypes = ArraySeq.empty)
-                val declaredTarget = Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
-                val line = methodInvocationLineNumbers.getOrElse(callerDeclaredTgtNumber, -1)
-                val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = None)
+                    val target = toMethod(tgtStr.slice(1, tgtStr.length - 1))
 
-                val target = toMethod(tgtStr.slice(1, tgtStr.length - 1))
-
-                val currentCallsites = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
-                val targets = currentCallsites.getOrElseUpdate(callSite, mutable.Set.empty)
-                targets += target
-            } catch {
-                case e: Throwable ⇒ println(e)
+                    val currentCallsites = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
+                    val targets = currentCallsites.getOrElseUpdate(callSite, mutable.Set.empty)
+                    targets += target
+                } catch {
+                    case e: Throwable ⇒ println(e)
+                }
             }
 
-        }
-
-        ReachableMethods(callGraph)
-    }
+            jcgCallGraph
+        }.get
 
     private def toMethod(methodStr: String): Method = {
         """([^:]+): ([^ ]+) ([^\(]+)\(([^\)]*)\)""".r.findFirstMatchIn(methodStr) match {

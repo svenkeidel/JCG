@@ -1,15 +1,13 @@
 import java.io.File
-import java.io.Writer
-
 import scala.jdk.CollectionConverters.*
 import scala.collection.mutable
-
 import soot.G
 import soot.PackManager
 import soot.Scene
 import soot.SootMethod
 import soot.options.Options
 
+import java.nio.file.Path
 import scala.collection.immutable.ArraySeq
 
 object SootJCGAdapter extends JavaTestAdapter {
@@ -22,40 +20,40 @@ object SootJCGAdapter extends JavaTestAdapter {
     val possibleAlgorithms: Array[String] = Array(CHA, RTA, VTA, Spark)
 
     val frameworkName: String = "Soot"
-    def serializeCG(
-        algorithm:      String,
-        inputDirPath:   String,
-        output:         Writer,
-        adapterOptions: AdapterOptions
-    ): AnalysisResult = {
-        G.reset()
-        val mainClass = adapterOptions.getString("mainClass")
-        val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getPath("JDKPath")
-        val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
 
-        val o = G.v().soot_options_Options()
+    override type Configuration = soot.G
+
+    override def configure[A](
+         algorithm: String,
+         target: String,
+         mainClass: String,
+         classPath: Array[String],
+         javaVersion: Int,
+         jdkPath: Path,
+         analyzeJDK: Boolean)
+     (actionWithConfiguration: Configuration => A): A =
+        G.reset()
+        val g = G.v()
+        val o = g.soot_options_Options()
         o.set_whole_program(true)
         o.set_keep_line_number(true)
         o.set_keep_offset(true)
         o.set_allow_phantom_refs(true)
         o.set_include_all(analyzeJDK)
 
-        // todo no-bodies-for-excluded in case of !analyzeJDK
+        val jreJars = JRELocation.getAllJREJars(jdkPath).map(_.toString)
 
-        val jreJars = JRELocation.getAllJREJars(JDKPath).map(_.toString)
-
-        if(analyzeJDK && algorithm == "CHA"){
-            o.set_process_dir((List(inputDirPath) ++ classPath ++ jreJars).asJava)
+        if (analyzeJDK && algorithm == "CHA") {
+            o.set_process_dir((List(target) ++ classPath ++ jreJars).asJava)
         } else {
-            o.set_process_dir((List(inputDirPath) ++ classPath).asJava)
+            o.set_process_dir((List(target) ++ classPath).asJava)
         }
 
         o.set_soot_classpath((classPath ++ jreJars).mkString(File.pathSeparator))
 
         o.set_output_format(Options.output_format_none)
 
-//        o.setPhaseOption("jb", "use-original-names:true")
+        //        o.setPhaseOption("jb", "use-original-names:true")
         o.setPhaseOption("jb", "model-lambdametafactory-namingstrategy:bytecodeoffset")
 
         o.setPhaseOption("cg", "safe-forname:false")
@@ -92,30 +90,34 @@ object SootJCGAdapter extends JavaTestAdapter {
             throw new IllegalArgumentException(s"unknown algorithm $algorithm")
         }
 
-        val scene = Scene.v()
+        val scene = g.soot_Scene()
         scene.releaseCallGraph()
         scene.releaseReachableMethods()
         scene.releasePointsToAnalysis()
         scene.releaseActiveHierarchy()
         scene.releaseFastHierarchy()
 
-        Time.settleDown()
+        try {
+            actionWithConfiguration(g)
+        } finally {
+            G.reset()
+        }
 
-        val irGenerationStart = Time()
-        scene.loadNecessaryClasses()
-        PackManager.v().runBodyPacks()
-        val irGenerationEnd = Time()
+    override def generateIR(configuration: Configuration): Unit =
+        configuration.soot_Scene().loadNecessaryClasses()
+        configuration.soot_PackManager().runBodyPacks()
 
+    override type CallGraph = soot.jimple.toolkits.callgraph.CallGraph
 
-        Time.settleDown()
+    override def computeCallGraph(configuration: Configuration): CallGraph = {
+        configuration.soot_PackManager().runPacks()
+        configuration.soot_Scene().getCallGraph
+    }
 
-        val callGraphComputationStart = Time()
-        PackManager.v().runPacks()
-        val callGraphComputationEnd = Time()
+    override def callGraphToJCG(configuration: Configuration, sootCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
+        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
-
-        for(edge <- scene.getCallGraph.asScala) {
+        for (edge <- sootCallGraph.asScala) {
 
             val caller = sootMethodToJCGMethod(edge.src())
 
@@ -141,19 +143,12 @@ object SootJCGAdapter extends JavaTestAdapter {
 
             val target = sootMethodToJCGMethod(edge.tgt)
 
-            val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
+            val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
             targets += target
         }
 
-        ReachableMethods(callGraph).writeCsv(output)
-
-        G.reset()
-
-        AnalysisResult.Success(
-            irGeneration = irGenerationEnd - irGenerationStart,
-            callGraphComputation = callGraphComputationEnd - callGraphComputationStart
-        )
+        jcgCallGraph
     }
 
     private def sootMethodToJCGMethod(method: SootMethod): Method = {

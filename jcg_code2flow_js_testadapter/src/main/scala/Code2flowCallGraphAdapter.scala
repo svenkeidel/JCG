@@ -96,7 +96,7 @@ object Code2flowCallGraphAdapter extends JSTestAdapter {
             }
         }
 
-        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
+        AnalysisResult.callGraphComputationTime(end - start)
     }
 
     /**

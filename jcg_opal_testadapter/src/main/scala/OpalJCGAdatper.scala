@@ -1,11 +1,9 @@
 import java.io.File
 import java.io.Writer
 import java.net.URL
-
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import com.typesafe.config.ConfigValueFactory
-
 import org.opalj.br.{DeclaredMethod, Type}
 import org.opalj.br.analyses.{DeclaredMethods, DeclaredMethodsKey, Project, SomeProject}
 import org.opalj.br.analyses.Project.JavaClassFileReader
@@ -19,7 +17,7 @@ import org.opalj.si.ProjectInformationKeys
 import org.opalj.tac.fpcf.analyses.cg.reflection.{ReflectionRelatedCallsAnalysisScheduler, TamiFlexCallGraphAnalysisScheduler}
 import org.opalj.tac.fpcf.analyses.{EagerTACAIProvider, LazyTACAIProvider}
 
-
+import java.nio.file.Path
 import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -38,16 +36,18 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
     val frameworkName: String = "Opal"
 
-    def serializeCG(
-        algorithm:      String,
-        inputDirPath:   String,
-        output:         Writer,
-        adapterOptions: AdapterOptions
-    ): AnalysisResult = {
-        val mainClass = adapterOptions.getString("mainClass")
-        val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getPath("JDKPath")
-        val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
+    override type Configuration = OpalConfiguration
+    case class OpalConfiguration(project: Project[URL], callGraphKey: CallGraphKey)
+
+    override def configure[A](
+         algorithm: String,
+         target: String,
+         mainClass: String,
+         classPath: Array[String],
+         javaVersion: Int,
+         jdkPath: Path,
+         analyzeJDK: Boolean)
+     (actionWithConfiguration: Configuration => A): A =
 
         val baseConfig: Config = ConfigFactory.load().withValue(
             "org.opalj.br.reader.ClassFileReader.Invokedynamic.rewrite",
@@ -61,24 +61,24 @@ object OpalJCGAdatper extends JavaTestAdapter {
                     "org.opalj.br.analyses.cg.InitialEntryPointsKey.analysis",
                     ConfigValueFactory.fromAnyRef("org.opalj.br.analyses.cg.LibraryEntryPointsFinder")
                 ).withValue(
-                        "org.opalj.br.analyses.cg.InitialInstantiatedTypesKey.analysis",
-                        ConfigValueFactory.fromAnyRef("org.opalj.br.analyses.cg.LibraryInstantiatedTypesFinder")
-                    )
+                    "org.opalj.br.analyses.cg.InitialInstantiatedTypesKey.analysis",
+                    ConfigValueFactory.fromAnyRef("org.opalj.br.analyses.cg.LibraryInstantiatedTypesFinder")
+                )
             } else baseConfig.withValue(
                 "org.opalj.br.analyses.cg.InitialEntryPointsKey.analysis",
                 ConfigValueFactory.fromAnyRef("org.opalj.br.analyses.cg.ConfigurationEntryPointsFinder")
             ).withValue(
-                    "org.opalj.br.analyses.cg.InitialEntryPointsKey.entryPoints",
-                    ConfigValueFactory.fromIterable(
-                        (
-                            (baseConfig.getObjectList("org.opalj.br.analyses.cg.InitialEntryPointsKey.entryPoints").asScala :+
-                                ConfigValueFactory.fromMap(Map("declaring-class" -> mainClass.replace('.', '/'), "name" -> "main").asJava))
+                "org.opalj.br.analyses.cg.InitialEntryPointsKey.entryPoints",
+                ConfigValueFactory.fromIterable(
+                    (
+                        (baseConfig.getObjectList("org.opalj.br.analyses.cg.InitialEntryPointsKey.entryPoints").asScala :+
+                            ConfigValueFactory.fromMap(Map("declaring-class" -> mainClass.replace('.', '/'), "name" -> "main").asJava))
                         ).asJava
-                    )
-                ).withValue(
-                        "org.opalj.br.analyses.cg.InitialInstantiatedTypesKey.analysis",
-                        ConfigValueFactory.fromAnyRef("org.opalj.br.analyses.cg.ApplicationInstantiatedTypesFinder")
-                    )
+                )
+            ).withValue(
+                "org.opalj.br.analyses.cg.InitialInstantiatedTypesKey.analysis",
+                ConfigValueFactory.fromAnyRef("org.opalj.br.analyses.cg.ApplicationInstantiatedTypesFinder")
+            )
 
         config = config
             .withValue("org.opalj.fpcf.analyses.AllocationSiteBasedPointsToAnalysis.mergeStringConstants", ConfigValueFactory.fromAnyRef(false))
@@ -92,9 +92,9 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
         // gather the class files to be loaded
         val cfReader = JavaClassFileReader(using theConfig = config)
-        val targetClassFiles = cfReader.ClassFiles(new File(inputDirPath))
+        val targetClassFiles = cfReader.ClassFiles(new File(target))
         val cpClassFiles = cfReader.AllClassFiles(classPath.map(new File(_)))
-        val jreJars = JRELocation.getAllJREJars(JDKPath).map(_.toFile)
+        val jreJars = JRELocation.getAllJREJars(jdkPath).map(_.toFile)
         val jre = cfReader.AllClassFiles(jreJars)
         val allClassFiles = targetClassFiles ++ cpClassFiles ++ (if (analyzeJDK) jre else Seq.empty)
         val libClassFiles = if (analyzeJDK) Seq.empty else Project.JavaLibraryClassFileReader.AllClassFiles(jreJars)
@@ -105,15 +105,6 @@ object OpalJCGAdatper extends JavaTestAdapter {
             libraryClassFilesAreInterfacesOnly = true,
             Seq.empty
         )
-
-        System.gc()
-        Thread.sleep(3.seconds.toMillis)
-
-        val irGenerationStart = Time()
-        val (ps,_) = project.get(FPCFAnalysesManagerKey).runAll(
-            EagerTACAIProvider
-        )
-        val irGenerationEnd = Time()
 
         val callGraphKey = algorithm match {
             case "CHA" ⇒ CHACallGraphKey
@@ -128,23 +119,30 @@ object OpalJCGAdatper extends JavaTestAdapter {
             case "1-1-CFA" ⇒ CFA_1_1_CallGraphKey
         }
 
-        System.gc()
-        Thread.sleep(3.seconds.toMillis)
+        actionWithConfiguration(OpalConfiguration(project, callGraphKey))
 
-        val callGraphComputationStart = Time()
-        val opalCallGraph = project.get(RemoveTacaiProvider(callGraphKey))
-        implicit val typeIterator: TypeIterator = project.get(TypeIteratorKey)
-        implicit val declaredMethods: DeclaredMethods = project.get(DeclaredMethodsKey)
-        val callGraphComputationEnd = Time()
+    override def generateIR(configuration: Configuration): Unit =
+        configuration.project.get(FPCFAnalysesManagerKey).runAll(
+            EagerTACAIProvider
+        )
 
+    override type CallGraph = org.opalj.tac.cg.CallGraph
+
+    override def computeCallGraph(configuration: Configuration): CallGraph =
+        val opalCallGraph = configuration.project.get(RemoveTacaiProvider(configuration.callGraphKey))
+        val typeIterator: TypeIterator = configuration.project.get(TypeIteratorKey)
+        val declaredMethods: DeclaredMethods = configuration.project.get(DeclaredMethodsKey)
+        opalCallGraph
+
+    override def callGraphToJCG(configuration: Configuration, opalCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] =
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
         for {
             callerOpal <- opalCallGraph.reachableMethods()
             (pc, targets) <- opalCallGraph.calleesOf(callerOpal.method)
             tgt <- targets
-            if(!callerOpal.method.name.startsWith("$string_concat") && !tgt.method.name.startsWith("$string_concat") &&
-               !callerOpal.method.name.startsWith("$newInstance") && !tgt.method.name.startsWith("$newInstance"))
+            if (!callerOpal.method.name.startsWith("$string_concat") && !tgt.method.name.startsWith("$string_concat") &&
+                !callerOpal.method.name.startsWith("$newInstance") && !tgt.method.name.startsWith("$newInstance"))
         } {
             val caller = opalMethodToJCGMethod(callerOpal.method)
 
@@ -188,15 +186,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
             targets += target
         }
 
-        ReachableMethods(callGraph).writeCsv(output)
-
-        ps.shutdown()
-
-        AnalysisResult.Success(
-            irGeneration = irGenerationEnd - irGenerationStart,
-            callGraphComputation = callGraphComputationEnd - callGraphComputationStart
-        )
-    }
+        callGraph
 
     private def opalMethodToJCGMethod(method: DeclaredMethod): Method =
         Method(

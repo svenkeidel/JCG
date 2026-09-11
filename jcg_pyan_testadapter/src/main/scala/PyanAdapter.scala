@@ -90,7 +90,7 @@ object PyanAdapter extends PyTestAdapter {
             }
         }
 
-        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
+        AnalysisResult.callGraphComputationTime(end - start)
     }
 
     private def toCommonFormat(cgFile: File): String = {

@@ -1,15 +1,14 @@
 import java.io.Writer
-import java.nio.file.{Files}
-
+import java.nio.file.{Files, Path}
 import scala.collection.compat.immutable.ArraySeq
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
-
 import sootup.callgraph.CallGraph
 import sootup.callgraph.CallGraphAlgorithm
 import sootup.callgraph.ClassHierarchyAnalysisAlgorithm
 import sootup.callgraph.RapidTypeAnalysisAlgorithm
 import sootup.core.cache.provider.FullCacheProvider
+import sootup.core.inputlocation.AnalysisInputLocation
 import sootup.core.model.SourceType
 import sootup.core.signatures.MethodSignature
 import sootup.core.types.VoidType
@@ -25,69 +24,76 @@ object SootUpJCGAdapter extends JavaTestAdapter {
     val possibleAlgorithms: Array[String] = Array(CHA, RTA)
 
     val frameworkName: String = "SootUp"
-    def serializeCG(
-        algorithm:      String,
-        inputDirPath:   String,
-        output:         Writer,
-        adapterOptions: AdapterOptions
-    ): AnalysisResult = {
-        val mainClass = adapterOptions.getString("mainClass")
-        val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getPath("JDKPath")
-        val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
-        val javaVersion = adapterOptions.getInt("javaVersion")
+
+    override type Configuration = SootUpConfiguration
+
+    class SootUpConfiguration(val mainClass: String, val inputLocations: List[AnalysisInputLocation], var view: JavaView = null, val algorithm: JavaView => CallGraphAlgorithm)
+
+    override def configure[A](
+         algorithm: String,
+         target: String,
+         mainClass: String,
+         classPath: Array[String],
+         javaVersion: Int,
+         jdkPath: Path,
+         analyzeJDK: Boolean)
+         (actionWithConfiguration: Configuration => A): A = {
 
         val jreInputLocation = {
             if(javaVersion <= 8) {
-                if(Files.exists(JDKPath.resolve("jre", "lib", "rt.jar")))
-                    ArchiveBasedAnalysisInputLocation(JDKPath.resolve("jre", "lib", "rt.jar"), SourceType.Library)
-                else if (Files.exists(JDKPath.resolve("lib", "rt.jar")))
-                    ArchiveBasedAnalysisInputLocation(JDKPath.resolve("lib", "rt.jar"), SourceType.Library)
+                if(Files.exists(jdkPath.resolve("jre", "lib", "rt.jar")))
+                    ArchiveBasedAnalysisInputLocation(jdkPath.resolve("jre", "lib", "rt.jar"), SourceType.Library)
+                else if (Files.exists(jdkPath.resolve("lib", "rt.jar")))
+                    ArchiveBasedAnalysisInputLocation(jdkPath.resolve("lib", "rt.jar"), SourceType.Library)
                 else throw java.io.IOException("Cannot find rt.jar")
             } else {
-                CustomJrtFileSystemAnalysisInputLocation(JDKPath.resolve("lib", "modules"), SourceType.Library)
+                CustomJrtFileSystemAnalysisInputLocation(jdkPath.resolve("lib", "modules"), SourceType.Library)
             }
         }
-        val inputLocations = List(JavaClassPathAnalysisInputLocation(inputDirPath), jreInputLocation)
-            ++ classPath.map(JavaClassPathAnalysisInputLocation(_)).toList
+        val inputLocations = List(
+                JavaClassPathAnalysisInputLocation(target),
+                jreInputLocation
+            ) ++
+            classPath.map(JavaClassPathAnalysisInputLocation(_)).toList
 
-        Time.settleDown()
-
-        val irGenerationStart = Time()
-        val view = new JavaView(inputLocations.asJava, new FullCacheProvider, LoadingStrategy.eager())
-        val irGenerationEnd = Time()
-
-        // todo no-bodies-for-excluded in case of !analyzeJDK
-
-        def computeCG(cgAlgorithm: CallGraphAlgorithm): CallGraph = {
-            val cg =
-                if (mainClass == null) {
-                cgAlgorithm.initialize()
-            } else {
-                val idFactory = view.getIdentifierFactory
-                val mainClassType = idFactory.getClassType(mainClass)
-                val stringArrayType = idFactory.getType("java.lang.String[]")
-                val mainMethod = idFactory.getMethodSignature(mainClassType, "main", VoidType.getInstance(), List(stringArrayType).asJava)
-                cgAlgorithm.initialize(List(mainMethod).asJava)
-            }
-            cg
+        val algo = (view: JavaView) => algorithm match {
+            case CHA => new ClassHierarchyAnalysisAlgorithm(view)
+            case RTA => new RapidTypeAnalysisAlgorithm(view)
         }
 
-        Time.settleDown()
+        val config = SootUpConfiguration(
+            mainClass = mainClass,
+            inputLocations = inputLocations,
+            view = null,
+            algorithm = algo)
 
-        val callGraphComputationStart = Time()
-        val sootUpCallGraph: CallGraph = algorithm match {
-            case CHA => computeCG(new ClassHierarchyAnalysisAlgorithm(view))
-            case RTA => computeCG(new RapidTypeAnalysisAlgorithm(view))
+        actionWithConfiguration(config)
+    }
+
+    override def generateIR(configuration: SootUpConfiguration): Unit =
+        configuration.view = new JavaView(configuration.inputLocations.asJava, new FullCacheProvider, LoadingStrategy.eager())
+
+
+    override type CallGraph = sootup.callgraph.CallGraph
+
+    override def computeCallGraph(configuration: Configuration): CallGraph =
+        if (configuration.mainClass == null) {
+            configuration.algorithm(configuration.view).initialize()
+        } else {
+            val idFactory = configuration.view.getIdentifierFactory
+            val mainClassType = idFactory.getClassType(configuration.mainClass)
+            val stringArrayType = idFactory.getType("java.lang.String[]")
+            val mainMethod = idFactory.getMethodSignature(mainClassType, "main", VoidType.getInstance(), List(stringArrayType).asJava)
+            configuration.algorithm(configuration.view).initialize(List(mainMethod).asJava)
         }
-        val callGraphComputationEnd = Time()
 
+    override def callGraphToJCG(configuration: Configuration, sootUpCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
         val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-        for(sootUpCaller <- sootUpCallGraph.getMethodSignatures.asScala;
-            caller = sootMethodToJCGMethod(sootUpCaller);
-            call <- sootUpCallGraph.callsFrom(sootUpCaller).asScala
-        ) {
+        for (sootUpCaller <- sootUpCallGraph.getMethodSignatures.asScala;
+             caller = sootMethodToJCGMethod(sootUpCaller);
+             call <- sootUpCallGraph.callsFrom(sootUpCaller).asScala
+             ) {
             val stmt = call.invokableStmt
 
             // e.g. null for finalize and no invoke for static initializers
@@ -112,9 +118,7 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             targets += target
         }
 
-        ReachableMethods(jcgCallGraph).writeCsv(output)
-
-        AnalysisResult.Success(irGeneration = irGenerationEnd - irGenerationStart, callGraphComputation = callGraphComputationEnd - callGraphComputationStart)
+        jcgCallGraph
     }
 
     private def sootMethodToJCGMethod(method: MethodSignature): Method = {

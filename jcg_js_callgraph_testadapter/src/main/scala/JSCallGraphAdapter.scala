@@ -85,6 +85,6 @@ object JSCallGraphAdapter extends JSTestAdapter {
         Using(Source.fromFile(tempFile)) { source => output.write(Json.prettyPrint(Json.parse(source.mkString))) }
 
         if (debug) println(s"Call graph for $inputDirPath generated in ${end - start} ns")
-        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
+        AnalysisResult.Success(Json.obj("callGraphComputation" -> (end - start)))
     }
 }

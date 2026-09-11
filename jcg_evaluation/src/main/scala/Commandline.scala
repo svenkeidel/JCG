@@ -22,7 +22,7 @@ object Commandline {
 
         val jreLocations = Util.getJRELocations(options)
 
-        Files.createDirectories(options.callGraphsDir)
+        Files.createDirectories(options.outputDirectory)
 
         val projectSpecPaths =
             Files.list(options.projectsDir)
@@ -51,8 +51,8 @@ object Commandline {
                 cgAlgo <- adapter.possibleAlgorithms
                 if(options.algorithmFilter.matches(cgAlgo))
             } {
-                val callGraphsDirectory = options.callGraphsDir.resolve(adapter.frameworkName, cgAlgo)
-                Files.createDirectories(callGraphsDirectory)
+                val outputDirectory = options.outputDirectory.resolve(adapter.frameworkName, cgAlgo)
+                Files.createDirectories(outputDirectory)
 
                 for (projectSpecPath <- projectSpecPaths) {
 
@@ -60,14 +60,15 @@ object Commandline {
                     val testCase = projectSpecPath.getFileName.toString.stripSuffix(".conf")
 
                     options.action match
-                        case Action.Analyze => runAnalysis(options, jreLocations, projectSpec, adapter, cgAlgo, callGraphsDirectory, testCase, teeOutputStream)
-                        case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
-                        case Action.Size => computeCallGraphSize(options, callGraphsDirectory, testCase)
-                        case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, callGraphsDirectory, testCase)
-                        case Action.ConvertDynamicCallGraphToCSV => convertDynamicCallGraphToCSV(options, jreLocations, projectSpec, callGraphsDirectory, testCase)
-                        case Action.DynamicStackTraces => dynamicStackTraces(options, callGraphsDirectory, testCase)
+                        case Action.ComputeCallGraph => computeCallgraph(options, jreLocations, projectSpec, adapter, cgAlgo, outputDirectory, testCase, teeOutputStream)
+                        case Action.MeasureTime => measureTime(options, jreLocations, projectSpec, adapter, cgAlgo, outputDirectory, testCase, teeOutputStream)
+                        case Action.MeasureMemory => measureMemory(options, jreLocations, projectSpec, adapter, cgAlgo, outputDirectory, testCase, teeOutputStream)
+                        case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, outputDirectory, testCase)
+                        case Action.Size => computeCallGraphSize(options, outputDirectory, testCase)
+                        case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, outputDirectory, testCase)
+                        case Action.ConvertDynamicCallGraphToCSV => convertDynamicCallGraphToCSV(options, jreLocations, projectSpec, outputDirectory, testCase)
+                        case Action.DynamicStackTraces => dynamicStackTraces(options, outputDirectory, testCase)
                 }
-
             }
         } finally {
             System.setOut(consoleOut)
@@ -76,61 +77,140 @@ object Commandline {
 
     }
 
-    private def runAnalysis(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, adapter: TestAdapter, cgAlgo: String, callGraphsDirectory: Path, testCase: String, teeOutputStream: TeeOutputStream): Any = {
+    private def computeCallgraph(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, adapter: TestAdapter, cgAlgo: String, outputDirectory: Path, testCase: String, teeOutputStream: TeeOutputStream): Any = {
         val callGraphPath =
             if(options.compress)
-                callGraphsDirectory.resolve(s"$testCase-callgraph.csv.gz")
+                outputDirectory.resolve(s"$testCase-callgraph.csv.gz")
             else
-                callGraphsDirectory.resolve(s"$testCase-callgraph.csv")
+                outputDirectory.resolve(s"$testCase-callgraph.csv")
 
-        val logFilePath = callGraphsDirectory.resolve(s"$testCase-log.txt")
+        val logFilePath = outputDirectory.resolve(s"$testCase-log.txt")
 
-        if(! options.overwriteCallgraph && Files.exists(callGraphPath))
+        if(! options.overwriteCallgraph && Files.exists(callGraphPath)) {
             println(s"Call graph file $callGraphPath exists. Do not run analysis.")
-        else {
-            Using(makeCallGraphWriter(callGraphPath)) { callGraphWriter =>
-                redirectedStdoutToLogfile(logFilePath, teeOutputStream) {
-                    println(s"running ${adapter.frameworkName} $cgAlgo against ${projectSpec.name}")
+        } else {
+            println(s"compute ${adapter.frameworkName} $cgAlgo callgraph for ${projectSpec.name}")
 
-                    val future = Future {
+            val target = getTarget(options, projectSpec)
+            val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
+
+            val future = Future {
+                Using(makeCallGraphWriter(callGraphPath)) { callGraphWriter =>
+                    redirectedStdoutToLogfile(logFilePath, teeOutputStream) {
                         try {
-                            adapter.serializeCG(
-                                cgAlgo,
-                                projectSpec.target(options.projectsDir.toFile).getCanonicalPath,
-                                callGraphWriter,
-                                AdapterOptions.makeJavaOptions(
-                                    testCase,
-                                    callGraphsDirectory,
-                                    projectSpec.main.orNull,
-                                    projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
-                                    projectSpec.java,
-                                    jreLocations(projectSpec.java),
-                                    target = projectSpec.target(options.projectsDir.toFile).toString,
-                                    jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
-                                    analyzeJDK = options.analyzeJdk,
-                                    analysisArguments = options.analysisArgs.split(" ")
-                                )
-                            )
+                            adapter.serializeCG(cgAlgo, target, callGraphWriter, javaOptions)
                         } catch {
-                            case e: Throwable =>
-                                AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+                            case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
                         }
                     }
+                }.get
+            }
 
-                    try {
-                        val runningTime = tryAwait(options.timeout, future)
-                        reportTiming(callGraphsDirectory, testCase, runningTime)
-                    } catch {
-                        case _: TimeoutException =>
-                            reportTiming(callGraphsDirectory, testCase,
-                                AnalysisResult.Timeout(options.timeout.seconds.toNanos))
-                        case e: Throwable =>
-                            println(e.getMessage)
-                    } finally {
-                        System.gc()
-                    }
-                }
-            }.get
+            try {
+                reportSize(tryAwait(options.timeout, future))
+            } catch {
+                case _: TimeoutException => reportSize(AnalysisResult.Timeout(options.timeout.seconds.toNanos))
+                case e: Throwable => reportSize(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n")))
+            } finally {
+                System.gc()
+            }
+        }
+
+        def reportSize(analysisResult: AnalysisResult): Unit = {
+            println(analysisResult)
+            val pw = new PrintWriter(outputDirectory.resolve(s"${testCase}-size.json").toFile)
+            pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
+            pw.close()
+        }
+    }
+
+    private def measureTime(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, adapter: TestAdapter, cgAlgo: String, outputDirectory: Path, testCase: String, teeOutputStream: TeeOutputStream): Any = {
+
+        println(s"measure time of ${adapter.frameworkName} $cgAlgo for ${projectSpec.name}")
+
+        val target = getTarget(options, projectSpec)
+        val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
+
+        def warmup = Future {
+            try {
+                adapter.warmup(cgAlgo, target, javaOptions)
+            }
+            catch {
+                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+            }
+        }
+
+        def measurent = Future {
+            try {
+                adapter.measureTime(cgAlgo, target, javaOptions)
+            }
+            catch {
+                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+            }
+        }
+
+        try {
+            (0 until options.warmupRuns).foreach { i =>
+                println(s"warmup run ${i+1}")
+                val result = tryAwait(options.timeout, warmup)
+                println(result)
+            }
+
+            val timings = (0 until options.measurementRuns).map { i =>
+                println(s"measurement run ${i+1}")
+                val result = tryAwait(options.timeout, measurent)
+                println(result)
+                result
+            }
+
+            reportTiming(timings)
+        } catch {
+            case _: TimeoutException =>
+                reportTiming(Seq(AnalysisResult.Timeout(options.timeout.seconds.toNanos)))
+            case e: Throwable =>
+                reportTiming(Seq(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))))
+        } finally {
+            System.gc()
+        }
+
+        def reportTiming(analysisResult: Seq[AnalysisResult]): Unit = {
+            println(analysisResult)
+            val pw = new PrintWriter(outputDirectory.resolve(s"${testCase}-timings.json").toFile)
+            pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
+            pw.close()
+        }
+    }
+
+    private def measureMemory(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, adapter: TestAdapter, cgAlgo: String, outputDirectory: Path, testCase: String, teeOutputStream: TeeOutputStream): Any = {
+        println(s"measure memory of ${adapter.frameworkName} $cgAlgo for ${projectSpec.name}")
+
+        val target = getTarget(options, projectSpec)
+        val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
+
+        def measurent = Future {
+            try {
+                adapter.measureMemory(cgAlgo, target, javaOptions)
+            }
+            catch {
+                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+            }
+        }
+
+        try {
+            val result = tryAwait(options.timeout, measurent)
+            reportMemory(result)
+        } catch {
+            case _: TimeoutException => reportMemory(AnalysisResult.Timeout(options.timeout.seconds.toNanos))
+            case e: Throwable => reportMemory(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n")))
+        } finally {
+            System.gc()
+        }
+
+        def reportMemory(analysisResult: AnalysisResult): Unit = {
+            println(analysisResult)
+            val pw = new PrintWriter(outputDirectory.resolve(s"${testCase}-alloc.json").toFile)
+            pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
+            pw.close()
         }
     }
 
@@ -327,6 +407,25 @@ object Commandline {
 
     ///////////////////////////// Helper Functions //////////////////////////////////////
 
+    private def getTarget(options: CommandlineOptions, projectSpec: ProjectSpecification) = {
+        projectSpec.target(options.projectsDir.toFile).getCanonicalPath
+    }
+
+    private def getJavaOptions(options: CommandlineOptions, projectSpec: ProjectSpecification, jreLocations: Map[Int, Path], callGraphsDirectory: Path, testCase: String) = {
+        AdapterOptions.makeJavaOptions(
+            testCase = testCase,
+            outputDirectory = callGraphsDirectory,
+            mainClass = projectSpec.main.orNull,
+            classPath = projectSpec.allClassPathEntryPaths(options.projectsDir.toFile),
+            javaVersion = projectSpec.java,
+            JDKPath = jreLocations(projectSpec.java),
+            target = projectSpec.target(options.projectsDir.toFile).toString,
+            jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
+            analyzeJDK = options.analyzeJdk,
+            analysisArguments = options.analysisArgs.split(" ")
+        )
+    }
+
     private def writeMethods(classification: Classification[Method], metric: String, writer: OutputStream): Unit =
         writer.write("method\n".getBytes(StandardCharsets.UTF_8))
         val result = metric match
@@ -384,13 +483,6 @@ object Commandline {
         case "true-positives"  => Json.toJson(classification.truePositive)
         case "false-positives" => Json.toJson(classification.falsePositive)
         case "false-negatives" => Json.toJson(classification.falseNegative)
-    }
-
-    private def reportTiming(experimentOutputPath: Path, testCase: String, analysisResult: AnalysisResult): Unit = {
-        val pw = new PrintWriter(experimentOutputPath.resolve(s"${testCase}-timings.json").toFile)
-        pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
-        pw.close()
-        println(analysisResult.toString)
     }
 
 
@@ -463,7 +555,13 @@ object Commandline {
         }
     }
 
-    protected def redirectedStdoutToLogfile(logFilePath: Path, teeOutputStream: TeeOutputStream)(run: => Unit): Unit = {
+    class DummyWriter extends Writer {
+        override def write(cbuf: Array[Char], off: Int, len: Int): Unit = {}
+        override def flush(): Unit = {}
+        override def close(): Unit = {}
+    }
+
+    protected def redirectedStdoutToLogfile[A](logFilePath: Path, teeOutputStream: TeeOutputStream)(run: => A): A = {
         val logOutputStream = BufferedOutputStream(FileOutputStream(logFilePath.toFile))
         try {
             teeOutputStream.targets = List(logOutputStream)

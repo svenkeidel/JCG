@@ -120,7 +120,7 @@ object TAJSJCGAdapter extends JSTestAdapter {
             }
         }
 
-        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
+        AnalysisResult.callGraphComputationTime(end - start)
     }
 
     private def toCommonFormat(cgFile: File): String = {

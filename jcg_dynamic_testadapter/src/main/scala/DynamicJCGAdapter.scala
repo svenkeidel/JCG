@@ -20,13 +20,19 @@ import java.nio.charset.StandardCharsets
 import scala.collection.immutable.ArraySeq
 
 type OuterCallSite = CallSite
-object DynamicJCGAdapter extends JavaTestAdapter {
+object DynamicJCGAdapter extends TestAdapter {
+
+    override val language: String = "java"
 
     override val possibleAlgorithms: Array[String] = Array("Dynamic")
 
     override val frameworkName: String = "Dynamic"
 
     val port = 1337
+
+    override def warmup(algorithm: String, inputDirPath: String, adapterOptions: AdapterOptions): AnalysisResult = throw NotImplementedError()
+    override def measureTime(algorithm: String, inputDirPath: String, adapterOptions: AdapterOptions): AnalysisResult = throw NotImplementedError()
+    override def measureMemory(algorithm: String, inputDirPath: String, adapterOptions: AdapterOptions): AnalysisResult = throw NotImplementedError()
 
     override def serializeCG(
         algorithm:      String,
@@ -122,7 +128,7 @@ object DynamicJCGAdapter extends JavaTestAdapter {
                 reachableMethods.writeCsv(output)
             }.get
 
-            AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = after - before)
+            AnalysisResult.callGraphComputationTime(callGraphComputation = after - before)
         } catch {
             case exc: Throwable =>
                 exc.printStackTrace(System.err)

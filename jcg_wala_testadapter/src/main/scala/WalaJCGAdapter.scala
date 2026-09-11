@@ -1,26 +1,25 @@
-import java.io.File
-import java.io.PrintWriter
-import java.io.Writer
-import java.util
-import java.util.stream.Collectors
-import scala.jdk.CollectionConverters.*
-import scala.collection.mutable
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.core.{JsonFactory, JsonGenerator}
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.ibm.wala.classLoader.Language.JAVA
-import com.ibm.wala.ipa.callgraph.{AnalysisCacheImpl, AnalysisOptions, CGNode, CallGraph}
+import com.ibm.wala.ipa.callgraph.{AnalysisCacheImpl, AnalysisOptions, CGNode}
 import com.ibm.wala.ipa.callgraph.impl.Util
 import com.ibm.wala.ipa.cha.{ClassHierarchy, ClassHierarchyFactory}
 import com.ibm.wala.types.MethodReference
 import com.ibm.wala.types.TypeReference
 import com.ibm.wala.util.NullProgressMonitor
 import com.ibm.wala.core.util.config.AnalysisScopeReader
+import com.ibm.wala.ipa.callgraph.cha.CHACallGraph
 import com.ibm.wala.ipa.summaries.LambdaSummaryClass
-import com.ibm.wala.shrike.shrikeCT.BootstrapMethodsReader.BootstrapMethod
-import com.ibm.wala.ssa.{SSAInvokeDynamicInstruction, SSAInvokeInstruction}
+import com.ibm.wala.ssa.{SSAInvokeDynamicInstruction}
 
+import java.io.File
+import java.io.PrintWriter
+import java.util
+import java.util.stream.Collectors
+
+import scala.jdk.CollectionConverters.*
+import scala.collection.mutable
+
+
+import java.nio.file.Path
 import scala.collection.immutable.ArraySeq
 
 object WalaJCGAdapter extends JavaTestAdapter {
@@ -29,35 +28,32 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
     val frameworkName: String = "Wala"
 
-    def serializeCG(
-        algorithm: String,
-        inputDirPath: String,
-        output:         Writer,
-        adapterOptions: AdapterOptions
-    ): AnalysisResult = {
-        val mainClass = adapterOptions.getString("mainClass")
-        val classPath = adapterOptions.getStringArray("classPath")
-        val JDKPath = adapterOptions.getPath("JDKPath")
-        val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
+    override type Configuration = WalaConfiguration
+
+    case class WalaConfiguration(algorithm: String, options: AnalysisOptions, cache: AnalysisCacheImpl, classHierarchy: ClassHierarchy)
+
+    override def configure[A](
+         algorithm: String,
+         target: String,
+         mainClass: String,
+         classPath: Array[String],
+         javaVersion: Int,
+         jdkPath: Path,
+         analyzeJDK: Boolean)
+    (actionWithConfiguration: Configuration => A): A = {
 
         val cl = Thread.currentThread.getContextClassLoader
 
         var cp = util.Arrays.stream(classPath).collect(Collectors.joining(File.pathSeparator))
-        cp = inputDirPath + File.pathSeparator + cp
+        cp = target + File.pathSeparator + cp
 
         // write wala.properties with the specified JDK and store it in the classpath
         val tmp = new File("tmp")
         tmp.mkdirs()
         val walaPropertiesFile = new File(tmp, "wala.properties")
         val pw = new PrintWriter(walaPropertiesFile)
-        pw.println(s"java_runtime_dir = $JDKPath")
+        pw.println(s"java_runtime_dir = $jdkPath")
         pw.close()
-
-        /*val sysloader = classOf[WalaProperties].getClassLoader.asInstanceOf[URLClassLoader]
-        val sysclass = classOf[URLClassLoader]
-        val m = sysclass.getDeclaredMethod("addURL", classOf[URL])
-        m.setAccessible(true)
-        m.invoke(sysloader, tmp.toURI.toURL)*/
 
         val ex = if (analyzeJDK) {
             new File(cl.getResource("no-exclusions.txt").getFile)
@@ -87,60 +83,59 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
         val cache = new AnalysisCacheImpl
 
-        Time.settleDown()
+        actionWithConfiguration(WalaConfiguration(algorithm, options, cache, classHierarchy))
+    }
 
-        val irGenerationStart = Time()
-        for(clazz <- classHierarchy.iterator().asScala;
-            method <- clazz.getDeclaredMethods.iterator().asScala) {
+    override def generateIR(configuration: Configuration): Unit = {
+        for (clazz <- configuration.classHierarchy.iterator().asScala;
+             method <- clazz.getDeclaredMethods.iterator().asScala) {
             try {
-                cache.getIR(method)
-            } catch { case (_: Throwable) => }
+                configuration.cache.getIR(method)
+            } catch {
+                case (_: Throwable) =>
+            }
         }
-        val irGenerationEnd = Time()
+    }
 
-        Time.settleDown()
+    override type CallGraph = com.ibm.wala.ipa.callgraph.CallGraph
 
-        val callGraphComputationStart = Time()
-        val walaCallGraph =
-            if (algorithm.contains("0-CFA")) {
-                val ncfaBuilder = Util.makeZeroCFABuilder(JAVA, options, cache, classHierarchy)
-                ncfaBuilder.makeCallGraph(options)
-            } else if (algorithm.contains("0-1-CFA")) {
-                val cfaBuilder = Util.makeZeroOneCFABuilder(JAVA, options, cache, classHierarchy)
-                cfaBuilder.makeCallGraph(options)
-            } else if (algorithm.contains("1-CFA")) {
-                val cfaBuilder = Util.makeNCFABuilder(1, JAVA, options, cache, classHierarchy)
-                cfaBuilder.makeCallGraph(options)
-            } else if (algorithm.contains("RTA")) {
-                val rtaBuilder = Util.makeRTABuilder(options, cache, classHierarchy)
-                rtaBuilder.makeCallGraph(options, new NullProgressMonitor)
-            } else if (algorithm.contains("CHA")) {
-                import com.ibm.wala.ipa.callgraph.cha.CHACallGraph
-                val CG = new CHACallGraph(classHierarchy)
-                CG.init(entrypoints)
+    override def computeCallGraph(configuration: Configuration): WalaJCGAdapter.CallGraph = {
+        configuration.algorithm match
+            case "0-CFA" =>
+                val ncfaBuilder = Util.makeZeroCFABuilder(JAVA, configuration.options, configuration.cache, configuration.classHierarchy)
+                ncfaBuilder.makeCallGraph(configuration.options)
+            case "0-1-CFA" =>
+                val cfaBuilder = Util.makeZeroOneCFABuilder(JAVA, configuration.options, configuration.cache, configuration.classHierarchy)
+                cfaBuilder.makeCallGraph(configuration.options)
+            case "1-CFA" =>
+                val cfaBuilder = Util.makeNCFABuilder(1, JAVA, configuration.options, configuration.cache, configuration.classHierarchy)
+                cfaBuilder.makeCallGraph(configuration.options)
+            case "RTA" =>
+                val rtaBuilder = Util.makeRTABuilder(configuration.options, configuration.cache, configuration.classHierarchy)
+                rtaBuilder.makeCallGraph(configuration.options, new NullProgressMonitor)
+            case "CHA" =>
+                val CG = new CHACallGraph(configuration.classHierarchy)
+                CG.init(configuration.options.getEntrypoints.asInstanceOf)
                 CG
-            } else throw new IllegalArgumentException
-        val callGraphComputationEnd = Time()
+            case _ => throw new IllegalArgumentException
+    }
+
+    override def callGraphToJCG(configuration: WalaConfiguration, walaCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
 
         val bootstrapMethods = getBootstrapMethods(walaCallGraph)
 
         val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
-        for(callerWala <- walaCallGraph.asScala;
-            caller = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, callerWala.getMethod.getReference);
-            callSiteWala <- callerWala.iterateCallSites().asScala;
-            targetWala <- walaCallGraph.getPossibleTargets(callerWala, callSiteWala).asScala) {
+        for (callerWala <- walaCallGraph.asScala;
+             caller = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, callerWala.getMethod.getReference);
+             callSiteWala <- callerWala.iterateCallSites().asScala;
+             targetWala <- walaCallGraph.getPossibleTargets(callerWala, callSiteWala).asScala) {
 
             val declaredTarget = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, callSiteWala.getDeclaredTarget)
 
             val pc = callSiteWala.getProgramCounter
 
-            val line = pc+1
-//                try {
-//                    callerWala.getMethod.getLineNumber(pc)
-//                } catch {
-//                    case _: ArrayIndexOutOfBoundsException ⇒ -1
-//                }
+            val line = pc + 1
 
             val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = Some(pc))
 
@@ -151,12 +146,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
             targets += target
         }
 
-        ReachableMethods(jcgCallGraph).writeCsv(output)
-
-        AnalysisResult.Success(
-            irGeneration = irGenerationEnd - irGenerationStart,
-            callGraphComputation = callGraphComputationEnd - callGraphComputationStart
-        )
+        jcgCallGraph
     }
 
     private def walaMethodToJCGMethod(callGraph: CallGraph, bootstrapMethods: Map[(String,Int), CGNode], method: MethodReference): Method = {

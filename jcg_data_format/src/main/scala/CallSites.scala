@@ -1,8 +1,9 @@
+import ReachableMethods.readCsv
 import play.api.libs.json.{Json, Reads, Writes, __}
 
 import java.io.{BufferedReader, Writer}
 import scala.collection.immutable.ArraySeq
-import scala.collection.mutable
+import scala.collection.{View, mutable}
 
 /**
  * Representation of all Methods that are reachable in the represented call graph.
@@ -23,6 +24,19 @@ case class ReachableMethods(reachableMethods: Map[Method, Map[CallSite, Set[Meth
             writer.write(target.toString + "\n")
         }
     }
+
+    def methods: Iterator[Method] = {
+        val result: mutable.Set[Method] = mutable.Set.empty
+        for((caller,callSiteMap) <- reachableMethods; (callSite,targets) <- callSiteMap; target <- targets) {
+            result += caller
+            result += target
+        }
+        result.iterator
+    }
+
+
+    def edges: Iterator[(Method, CallSite, Method)] =
+        for((caller,callSiteMap) <- reachableMethods.iterator; (callSite,targets) <- callSiteMap; target <- targets) yield (caller, callSite, target)
 }
 
 object ReachableMethods:

@@ -96,7 +96,7 @@ object JellyCallGraphAdapter extends JSTestAdapter {
             }
         }
 
-        AnalysisResult.Success(irGeneration = Time.zero, callGraphComputation = end - start)
+        AnalysisResult.callGraphComputationTime(end - start)
     }
 
     /**
