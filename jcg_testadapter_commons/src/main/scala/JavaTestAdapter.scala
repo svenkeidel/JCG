@@ -86,40 +86,42 @@ trait JavaTestAdapter extends TestAdapter {
 
         val profiler = AsyncProfiler.getInstance()
 
-        val profilingOutput = outputDirectory.resolve(s"$testCase-alloc.jfr")
-        profiler.execute(s"start,jfr,event=alloc,file=$profilingOutput")
+        val configureJFR = outputDirectory.resolve(s"$testCase-configure-alloc.jfr")
+        val generateIRJFR = outputDirectory.resolve(s"$testCase-generate-ir-alloc.jfr")
+        val callGraphJFR = outputDirectory.resolve(s"$testCase-callgraph-alloc.jfr")
 
+        profiler.execute(s"start,jfr,event=alloc,file=$configureJFR")
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            generateIR(configuration)
-
-            val callGraph = computeCallGraph(configuration)
-
             profiler.execute("stop")
 
-            Using(EventStream.openFile(profilingOutput)) { eventStream =>
+            profiler.execute(s"start,jfr,event=alloc,file=$generateIRJFR")
+            generateIR(configuration)
+            profiler.execute("stop")
 
-                val adapterClassName = this.getClass.getName
-                val methodNames = Array("configure", "generateIR", "computeCallGraph")
-                val allocations: Array[Long] = methodNames.map(_ => 0)
+            profiler.execute(s"start,jfr,event=alloc,file=$callGraphJFR")
+            computeCallGraph(configuration)
+            profiler.execute("stop")
 
-                def sumBytes(event: RecordedEvent) = {
-                    event.getStackTrace.getFrames.asScala.find(frame =>
-                        frame.getMethod.getType.getName == adapterClassName && methodNames.contains(frame.getMethod.getName)
-                    ) match
-                        case Some(frame) =>
-                            val methodIdx = methodNames.indexOf(frame.getMethod.getName)
-                            allocations(methodIdx) = allocations(methodIdx) + event.getLong("tlabSize")
-                        case None => {}
-                }
-
-                eventStream.onEvent("jdk.ObjectAllocationInNewTLAB", sumBytes)
-                eventStream.onEvent("jdk.ObjectAllocationOutsideTLAB", sumBytes)
-                eventStream.start()
-
-                AnalysisResult.Success(Json.toJson(methodNames.zip(allocations).toMap))
-            }.get
-
+            AnalysisResult.Success(Json.obj(
+                "configure" -> sumAllocations(configureJFR),
+                "generateIR" -> sumAllocations(generateIRJFR),
+                "callgraph" -> sumAllocations(callGraphJFR)
+            ))
         }
+
+    private def sumAllocations(jfrFile: Path): Long =
+        Using(EventStream.openFile(jfrFile)) { eventStream =>
+            var allocations: Long = 0
+            def sumBytes(event: RecordedEvent) = {
+                allocations = allocations + event.getLong("tlabSize")
+            }
+
+            eventStream.onEvent("jdk.ObjectAllocationInNewTLAB", sumBytes)
+            eventStream.onEvent("jdk.ObjectAllocationOutsideTLAB", sumBytes)
+            eventStream.start()
+
+            allocations
+        }.get
 
     override def serializeCG(algorithm: String, inputDirPath: String, output: Writer, adapterOptions: AdapterOptions): AnalysisResult =
         val mainClass = adapterOptions.getString("mainClass")

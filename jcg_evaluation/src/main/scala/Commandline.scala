@@ -187,6 +187,15 @@ object Commandline {
         val target = getTarget(options, projectSpec)
         val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
 
+        def warmup = Future {
+            try {
+                adapter.warmup(cgAlgo, target, javaOptions)
+            }
+            catch {
+                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+            }
+        }
+
         def measurent = Future {
             try {
                 adapter.measureMemory(cgAlgo, target, javaOptions)
@@ -197,7 +206,17 @@ object Commandline {
         }
 
         try {
-            val result = tryAwait(options.timeout, measurent)
+            // One warmup round to factor out allocations for class loading
+            println(s"warmup run")
+            var result = tryAwait(options.timeout, warmup)
+            println(result)
+
+            System.gc()
+            Thread.sleep(1.seconds.toMillis)
+
+            // Measurement round
+            println(s"measurement run")
+            result = tryAwait(options.timeout, measurent)
             reportMemory(result)
         } catch {
             case _: TimeoutException => reportMemory(AnalysisResult.Timeout(options.timeout.seconds.toNanos))
