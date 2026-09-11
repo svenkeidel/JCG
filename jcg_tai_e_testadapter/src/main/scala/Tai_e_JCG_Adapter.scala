@@ -53,10 +53,12 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
                     List(
                         "-java", javaVersion.toString,
                         "--jre-dir", if (jdkPath.endsWith("jre")) jdkPath.getParent.toString else jdkPath.toString,
-                        "--class-path", classPath.mkString(":"),
+                        "--class-path", classPath.toList.prepended(target).mkString(":"),
                         //                    "-scope", "ALL",
                         "--output-dir", callGraphDirectory.toString
                     ) ++ callGraphOptions
+
+            println(command)
 
             val options: Options = Options.parse(command *)
 
