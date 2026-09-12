@@ -103,7 +103,7 @@ object SootJCGAdapter extends JavaTestAdapter {
             G.reset()
         }
 
-    override def generateIR(configuration: Configuration): Unit =
+    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit =
         configuration.soot_Scene().loadNecessaryClasses()
         configuration.soot_PackManager().runBodyPacks()
 

@@ -30,7 +30,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
     override type Configuration = WalaConfiguration
 
-    case class WalaConfiguration(algorithm: String, options: AnalysisOptions, cache: AnalysisCacheImpl, classHierarchy: ClassHierarchy)
+    case class WalaConfiguration(algorithm: String, mainClass: String, classPath: Array[String], exclusionsFile: File, var options: AnalysisOptions, var classHierarchy: ClassHierarchy, cache: AnalysisCacheImpl)
 
     override def configure[A](
          algorithm: String,
@@ -44,9 +44,6 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
         val cl = Thread.currentThread.getContextClassLoader
 
-        var cp = util.Arrays.stream(classPath).collect(Collectors.joining(File.pathSeparator))
-        cp = target + File.pathSeparator + cp
-
         // write wala.properties with the specified JDK and store it in the classpath
         val tmp = new File("tmp")
         tmp.mkdirs()
@@ -55,38 +52,38 @@ object WalaJCGAdapter extends JavaTestAdapter {
         pw.println(s"java_runtime_dir = $jdkPath")
         pw.close()
 
-        val ex = if (analyzeJDK) {
+        val exclusionsFile = if (analyzeJDK) {
             new File(cl.getResource("no-exclusions.txt").getFile)
         } else {
             // TODO exclude more of the jdk
             new File(cl.getResource("Java60RegressionExclusions.txt").getFile)
         }
 
-        val scope = AnalysisScopeReader.instance.makeJavaBinaryAnalysisScope(cp, ex)
-
         // we do not need the wala.properties anymore!
         walaPropertiesFile.delete()
         tmp.delete()
 
-        val classHierarchy = ClassHierarchyFactory.make(scope)
-
-        val entrypoints =
-            if (mainClass == null) {
-                new AllSubtypesOfApplicationEntrypoints(scope, classHierarchy)
-            } else {
-                val mainClassWala = "L" + mainClass.replace(".", "/")
-                Util.makeMainEntrypoints(scope, classHierarchy, mainClassWala)
-            }
-
-        val options = new AnalysisOptions(scope, entrypoints)
-        options.setReflectionOptions(AnalysisOptions.ReflectionOptions.FULL)
-
         val cache = new AnalysisCacheImpl
 
-        actionWithConfiguration(WalaConfiguration(algorithm, options, cache, classHierarchy))
+        actionWithConfiguration(WalaConfiguration(algorithm, mainClass, classPath.prepended(target), exclusionsFile, null, null, cache))
     }
 
-    override def generateIR(configuration: Configuration): Unit = {
+    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {
+        val scope = AnalysisScopeReader.instance.makeJavaBinaryAnalysisScope(configuration.classPath.mkString(File.pathSeparator), configuration.exclusionsFile)
+
+        configuration.classHierarchy = ClassHierarchyFactory.make(scope)
+
+        val entrypoints =
+            if (configuration.mainClass == null) {
+                new AllSubtypesOfApplicationEntrypoints(scope, configuration.classHierarchy)
+            } else {
+                val mainClassWala = "L" + configuration.mainClass.replace(".", "/")
+                Util.makeMainEntrypoints(configuration.classHierarchy, mainClassWala)
+            }
+
+        configuration.options = new AnalysisOptions(scope, entrypoints)
+        configuration.options.setReflectionOptions(AnalysisOptions.ReflectionOptions.FULL)
+
         for (clazz <- configuration.classHierarchy.iterator().asScala;
              method <- clazz.getDeclaredMethods.iterator().asScala) {
             try {

@@ -4,7 +4,7 @@ import java.net.URL
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import com.typesafe.config.ConfigValueFactory
-import org.opalj.br.{DeclaredMethod, Type}
+import org.opalj.br.{ClassFile, DeclaredMethod, Type}
 import org.opalj.br.analyses.{DeclaredMethods, DeclaredMethodsKey, Project, SomeProject}
 import org.opalj.br.analyses.Project.JavaClassFileReader
 import org.opalj.br.fpcf.FPCFAnalysisScheduler
@@ -37,7 +37,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
     val frameworkName: String = "Opal"
 
     override type Configuration = OpalConfiguration
-    case class OpalConfiguration(project: Project[URL], callGraphKey: CallGraphKey)
+    case class OpalConfiguration(config: Config, target: String, classPath: Array[String], jreJars: Iterable[File], callGraphKey: CallGraphKey, analyzeJDK: Boolean, var project: Project[URL] = null)
 
     override def configure[A](
          algorithm: String,
@@ -90,21 +90,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
         modules += "org.opalj.tac.fpcf.analyses.pointsto.ReflectionAllocationsAnalysisScheduler"
         config = config.withValue("org.opalj.tac.cg.PointsTo.modules",  ConfigValueFactory.fromIterable(modules.asJava))
 
-        // gather the class files to be loaded
-        val cfReader = JavaClassFileReader(using theConfig = config)
-        val targetClassFiles = cfReader.ClassFiles(new File(target))
-        val cpClassFiles = cfReader.AllClassFiles(classPath.map(new File(_)))
         val jreJars = JRELocation.getAllJREJars(jdkPath).map(_.toFile)
-        val jre = cfReader.AllClassFiles(jreJars)
-        val allClassFiles = targetClassFiles ++ cpClassFiles ++ (if (analyzeJDK) jre else Seq.empty)
-        val libClassFiles = if (analyzeJDK) Seq.empty else Project.JavaLibraryClassFileReader.AllClassFiles(jreJars)
-
-        val project: Project[URL] = Project(
-            allClassFiles,
-            libClassFiles,
-            libraryClassFilesAreInterfacesOnly = true,
-            Seq.empty
-        )
 
         val callGraphKey = algorithm match {
             case "CHA" ⇒ CHACallGraphKey
@@ -119,12 +105,27 @@ object OpalJCGAdatper extends JavaTestAdapter {
             case "1-1-CFA" ⇒ CFA_1_1_CallGraphKey
         }
 
-        actionWithConfiguration(OpalConfiguration(project, callGraphKey))
+        actionWithConfiguration(OpalConfiguration(config = config, target = target, classPath = classPath, jreJars = jreJars, callGraphKey = callGraphKey, analyzeJDK = analyzeJDK))
 
-    override def generateIR(configuration: Configuration): Unit =
+    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {
+        val cfReader = JavaClassFileReader(using theConfig = configuration.config)
+        val targetClassFiles = cfReader.ClassFiles(new File(configuration.target))
+        val cpClassFiles = cfReader.AllClassFiles(configuration.classPath.map(new File(_)))
+        val jre = cfReader.AllClassFiles(configuration.jreJars)
+        val allClassFiles = targetClassFiles ++ cpClassFiles ++ (if (configuration.analyzeJDK) jre else Seq.empty)
+        val libClassFiles = if (configuration.analyzeJDK) Seq.empty else Project.JavaLibraryClassFileReader.AllClassFiles(configuration.jreJars)
+
+        configuration.project = Project(
+            allClassFiles,
+            libClassFiles,
+            libraryClassFilesAreInterfacesOnly = true,
+            Seq.empty
+        )
+
         configuration.project.get(FPCFAnalysesManagerKey).runAll(
             EagerTACAIProvider
         )
+    }
 
     override type CallGraph = org.opalj.tac.cg.CallGraph
 

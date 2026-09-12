@@ -26,7 +26,7 @@ trait JavaTestAdapter extends TestAdapter {
     )
     (actionWithConfiguration: Configuration => A): A
 
-    def generateIR(configuration: Configuration): Unit
+    def parseClassFilesAndGenerateIR(configuration: Configuration): Unit
 
     def computeCallGraph(configuration: Configuration): CallGraph
 
@@ -41,7 +41,7 @@ trait JavaTestAdapter extends TestAdapter {
         val target = adapterOptions.getString("target")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            generateIR(configuration)
+            parseClassFilesAndGenerateIR(configuration)
             computeCallGraph(configuration)
             AnalysisResult.Success(JsNull)
         }
@@ -55,11 +55,10 @@ trait JavaTestAdapter extends TestAdapter {
         val target = adapterOptions.getString("target")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-
             Time.settleDown()
 
             val irGenerationStart = Time()
-            generateIR(configuration)
+            parseClassFilesAndGenerateIR(configuration)
             val irGenerationEnd = Time()
 
             Time.settleDown()
@@ -69,7 +68,7 @@ trait JavaTestAdapter extends TestAdapter {
             val callGraphComputationEnd = Time()
 
             AnalysisResult.Success(Json.obj(
-                "irGeneration" -> (irGenerationEnd - irGenerationStart),
+                "parseClassFilesAndGenerateIr" -> (irGenerationEnd - irGenerationStart),
                 "callGraphComputation" -> (callGraphComputationEnd - callGraphComputationStart)
             ))
         }
@@ -87,15 +86,15 @@ trait JavaTestAdapter extends TestAdapter {
         val profiler = AsyncProfiler.getInstance()
 
         val configureJFR = outputDirectory.resolve(s"$testCase-configure-alloc.jfr")
-        val generateIRJFR = outputDirectory.resolve(s"$testCase-generate-ir-alloc.jfr")
+        val parseClassFilesAndGenerateIRJFR = outputDirectory.resolve(s"$testCase-generate-ir-alloc.jfr")
         val callGraphJFR = outputDirectory.resolve(s"$testCase-callgraph-alloc.jfr")
 
         profiler.execute(s"start,jfr,event=alloc,file=$configureJFR")
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
             profiler.execute("stop")
 
-            profiler.execute(s"start,jfr,event=alloc,file=$generateIRJFR")
-            generateIR(configuration)
+            profiler.execute(s"start,jfr,event=alloc,file=$parseClassFilesAndGenerateIRJFR")
+            parseClassFilesAndGenerateIR(configuration)
             profiler.execute("stop")
 
             profiler.execute(s"start,jfr,event=alloc,file=$callGraphJFR")
@@ -104,7 +103,7 @@ trait JavaTestAdapter extends TestAdapter {
 
             AnalysisResult.Success(Json.obj(
                 "configure" -> sumAllocations(configureJFR),
-                "generateIR" -> sumAllocations(generateIRJFR),
+                "parseClassFilesAndGenerateIR" -> sumAllocations(parseClassFilesAndGenerateIRJFR),
                 "callgraph" -> sumAllocations(callGraphJFR)
             ))
         }
@@ -132,7 +131,7 @@ trait JavaTestAdapter extends TestAdapter {
         val target = adapterOptions.getString("target")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            generateIR(configuration)
+            parseClassFilesAndGenerateIR(configuration)
             val callGraph = computeCallGraph(configuration)
             val jcgCallGraph = callGraphToJCG(configuration, callGraph)
             val reachableMethods = ReachableMethods(jcgCallGraph)

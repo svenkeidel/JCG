@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters.*
 import scala.concurrent.duration.*
 
 
-object Tai_e_JCG_Adapter extends JavaTestAdapter {
+object TaieJCGAdapter extends JavaTestAdapter {
     override val frameworkName: String = "Taie"
 
     override val possibleAlgorithms: Array[String] = Array("CHA", "0-CFA", "1-CFA", "1-CFA+HEAP", "1OBJ-CFA", "1OBJ-CFA+HEAP", "1TYP-CFA")
@@ -78,7 +78,7 @@ object Tai_e_JCG_Adapter extends JavaTestAdapter {
             FileUtils.deleteDirectory(callGraphDirectory.toFile)
         }
 
-    override def generateIR(configuration: Configuration): Unit = {
+    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {
         configuration.builder.build(configuration.options)
     }
 

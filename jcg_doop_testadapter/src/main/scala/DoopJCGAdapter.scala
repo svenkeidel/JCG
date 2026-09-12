@@ -79,7 +79,7 @@ object DoopAdapter extends JavaTestAdapter {
         val target = adapterOptions.getString("target")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            generateIR(configuration)
+            parseClassFilesAndGenerateIR(configuration)
             val callGraph = computeCallGraph(configuration)
 
             val factsGenerationTime = Time.fromNanoseconds(Files.readString(callGraph.database.resolve("facts-generation-time.txt")).toLong)
@@ -146,7 +146,7 @@ object DoopAdapter extends JavaTestAdapter {
             FileUtils.deleteDirectory(outDir.toFile)
         }
 
-    override def generateIR(configuration: Configuration): Unit = {}
+    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {}
 
     override type CallGraph = DoopCallGraph
     case class DoopCallGraph(database: Path, methodInvocationLinesCSV: Path, callGraphCSV: Path)

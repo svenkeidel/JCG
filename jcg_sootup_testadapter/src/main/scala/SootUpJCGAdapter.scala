@@ -70,7 +70,7 @@ object SootUpJCGAdapter extends JavaTestAdapter {
         actionWithConfiguration(config)
     }
 
-    override def generateIR(configuration: SootUpConfiguration): Unit =
+    override def parseClassFilesAndGenerateIR(configuration: SootUpConfiguration): Unit =
         configuration.view = new JavaView(configuration.inputLocations.asJava, new FullCacheProvider, LoadingStrategy.eager())
 
 

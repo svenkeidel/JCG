@@ -38,7 +38,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
         val target = adapterOptions.getString("target")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            generateIR(configuration)
+            parseClassFilesAndGenerateIR(configuration)
             val callGraph = computeCallGraph(configuration)
             val timing = Time.fromNanoseconds(Files.readString(configuration.outDir.resolve("ValDroid-timing.txt")).toLong)
             AnalysisResult.irGenerationAndCallGraphComputationTime(Time.zero, timing)
@@ -109,7 +109,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
             FileUtils.deleteDirectory(outDir.toFile)
         }
 
-    override def generateIR(configuration: Configuration): Unit = {}
+    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {}
 
     override type CallGraph = SerializedCallgraph
 
