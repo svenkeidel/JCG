@@ -101,11 +101,14 @@ object DoopAdapter extends JavaTestAdapter {
         assert(Files.exists(doopHome))
         assert(Files.isDirectory(doopHome))
 
+        assert(env.containsKey("DOOP_OUT"))
+        val doopOut = Paths.get(env.get("DOOP_OUT"))
+        Files.createDirectories(doopOut)
+
         val analysisId: UUID = UUID.randomUUID()
-        val outDir = doopHome.resolve("out", analysisId.toString)
+        val outDir = doopOut.resolve(analysisId.toString)
 
         try {
-
             var args = Array(
                 "--analysis", algorithmToDoopAnalysis(algorithm))
                 ++ (if (algorithm.contains("REFLECTION")) Array("--reflection") else Array.empty[String])
