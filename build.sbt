@@ -121,9 +121,11 @@ lazy val jcg_opal_testadapter = project.settings(
 lazy val jcg_doop_testadapter = project.settings(
     commonSettings,
     name := "JCG DOOP Test Adapter",
-    libraryDependencies += "de.opal-project" %% "bytecode-representation" % opalVersion,
+    libraryDependencies += "org.clyze" % "doop" % "4.25.0",
     libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
     libraryDependencies += "commons-io" % "commons-io" % commonsIoVersion,
+    resolvers += Resolver.mavenLocal,
+    resolvers += "jitpack" at "https://jitpack.io",
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(

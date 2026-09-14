@@ -1,17 +1,12 @@
-
-import java.io.File
-import java.io.Writer
 import java.nio.file.{Files, Path, Paths}
 import scala.collection.mutable
 import scala.io.Source
-import scala.sys.process.Process
 import org.apache.commons.io.FileUtils
-import play.api.libs.json.{JsNull, Json}
-import org.opalj.br.ClassType
+import play.api.libs.json.JsNull
 
+import java.util.UUID
 import scala.collection.compat.immutable.ArraySeq
-import scala.util.Using
-import scala.math.pow
+import scala.util.{Random, Using}
 
 /**
  * This is an experimental stage [[JavaTestAdapter]] as it is not possible to run Doop without
@@ -89,7 +84,7 @@ object DoopAdapter extends JavaTestAdapter {
         }
 
     override type Configuration = DoopConfiguration
-    case class DoopConfiguration(processBuilder: ProcessBuilder, outDir: Path)
+    case class DoopConfiguration(args: Array[String], analysisId: UUID, inputJars: Array[String], outDir: Path)
 
     override def configure[A](
          algorithm: String,
@@ -106,20 +101,18 @@ object DoopAdapter extends JavaTestAdapter {
         assert(Files.exists(doopHome))
         assert(Files.isDirectory(doopHome))
 
-        val outDir = Files.createTempDirectory(null)
+        val analysisId: UUID = UUID.randomUUID()
+        val outDir = doopHome.resolve("out", analysisId.toString)
 
         try {
 
             var args = Array(
-                "./bin/doop",
                 "--analysis", algorithmToDoopAnalysis(algorithm))
                 ++ (if (algorithm.contains("REFLECTION")) Array("--reflection") else Array.empty[String])
                 ++ Array(
                 "--timeout", "1440",
                 "--platform", s"java_$javaVersion",
-                "--use-local-java-platform", jdkPath.toAbsolutePath.toString,
-                "-i", target)
-                ++ classPath
+                "--use-local-java-platform", jdkPath.toAbsolutePath.toString)
 
             if (analyzeJDK) {
                 args ++= JRELocation.getAllJREJars(jdkPath).map(_.toString)
@@ -128,36 +121,27 @@ object DoopAdapter extends JavaTestAdapter {
             if (mainClass != null)
                 args ++= Array("--main", mainClass)
 
-
             println(args.mkString(" "))
 
-            val memoryMiB = (Runtime.getRuntime.maxMemory().toDouble / scala.math.pow(1024, 2)).round
-            val processBuilder = new ProcessBuilder(args *)
-            processBuilder.directory(doopHome.toFile)
-            val env = processBuilder.environment()
-            env.put("DOOP_HOME", doopHome.toAbsolutePath.toString)
-            env.put("DOOP_OUT", outDir.toAbsolutePath.toString)
-            env.put("DEFAULT_JVM_OPTS", s"\"-DmaxHeapSize=${memoryMiB}m\" \"-DstackSize=1000m\"")
-            processBuilder.redirectErrorStream(true)
-
-            actionWithConfiguration(DoopConfiguration(processBuilder, outDir = outDir))
+            actionWithConfiguration(DoopConfiguration(args = args, analysisId = analysisId,  inputJars = Array(target) ++ classPath, outDir = outDir))
 
         } finally {
             FileUtils.deleteDirectory(outDir.toFile)
         }
 
-    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {}
+    override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit =
+        org.clyze.doop.Main.main2((configuration.args ++ Array("--facts-only", "--id", configuration.analysisId.toString, "-i") ++ configuration.inputJars)*)
 
     override type CallGraph = DoopCallGraph
     case class DoopCallGraph(database: Path, methodInvocationLinesCSV: Path, callGraphCSV: Path)
 
     override def computeCallGraph(configuration: Configuration): CallGraph =
-        val process = configuration.processBuilder.start()
-        process.getInputStream.transferTo(System.out)
-        val exitCode = process.waitFor()
-        if (exitCode != 0)
-            throw IllegalArgumentException(s"Exit code $exitCode not 0")
-        val database = Files.list(configuration.outDir).findFirst().get().resolve("database")
+        org.clyze.doop.Main.main2((
+            configuration.args ++
+            Array("--id", configuration.analysisId.toString,
+                  "--input-id", configuration.analysisId.toString)
+        )*)
+        val database = configuration.outDir.resolve("database")
         val callGraphCsv = database.resolve("CallGraphEdge.csv")
         val methodInvocationLinesCsv = database.resolve("MethodInvocation-Line.facts")
         DoopCallGraph(database, methodInvocationLinesCsv, callGraphCsv)
