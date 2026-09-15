@@ -108,7 +108,9 @@ object OpalJCGAdatper extends JavaTestAdapter {
         actionWithConfiguration(OpalConfiguration(config = config, target = target, classPath = classPath, jreJars = jreJars, callGraphKey = callGraphKey, analyzeJDK = analyzeJDK))
 
     override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {
-        val cfReader = JavaClassFileReader(using theConfig = configuration.config)
+        implicit val config: Config = configuration.config
+
+        val cfReader = JavaClassFileReader
         val targetClassFiles = cfReader.ClassFiles(new File(configuration.target))
         val cpClassFiles = cfReader.AllClassFiles(configuration.classPath.map(new File(_)))
         val jre = cfReader.AllClassFiles(configuration.jreJars)
@@ -130,6 +132,8 @@ object OpalJCGAdatper extends JavaTestAdapter {
     override type CallGraph = org.opalj.tac.cg.CallGraph
 
     override def computeCallGraph(configuration: Configuration): CallGraph =
+        implicit val config: Config = configuration.config
+
         val opalCallGraph = configuration.project.get(RemoveTacaiProvider(configuration.callGraphKey))
         val typeIterator: TypeIterator = configuration.project.get(TypeIteratorKey)
         val declaredMethods: DeclaredMethods = configuration.project.get(DeclaredMethodsKey)
