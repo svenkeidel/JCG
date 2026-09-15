@@ -86,7 +86,7 @@ object Commandline {
 
         val logFilePath = outputDirectory.resolve(s"$testCase-log.txt")
 
-        if(! options.overwriteCallgraph && Files.exists(callGraphPath)) {
+        if(! options.overwriteResult && Files.exists(callGraphPath)) {
             println(s"Call graph file $callGraphPath exists. Do not run analysis.")
         } else {
             println(s"compute ${adapter.frameworkName} $cgAlgo callgraph for ${projectSpec.name}")
@@ -130,54 +130,60 @@ object Commandline {
 
         val target = getTarget(options, projectSpec)
         val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
+        val timingsFile = outputDirectory.resolve(s"${testCase}-timings.json")
 
-        def warmup = Future {
+        if (!options.overwriteResult && Files.exists(timingsFile)) {
+            println(s"Timing file $timingsFile exists. Do not run measurement.")
+        } else {
+
+            def warmup = Future {
+                try {
+                    adapter.warmup(cgAlgo, target, javaOptions)
+                }
+                catch {
+                    case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+                }
+            }
+
+            def measurent = Future {
+                try {
+                    adapter.measureTime(cgAlgo, target, javaOptions)
+                }
+                catch {
+                    case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+                }
+            }
+
             try {
-                adapter.warmup(cgAlgo, target, javaOptions)
-            }
-            catch {
-                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
-            }
-        }
+                (0 until options.warmupRuns).foreach { i =>
+                    println(s"warmup run ${i + 1}")
+                    val result = tryAwait(options.timeout, warmup)
+                    println(result)
+                }
 
-        def measurent = Future {
-            try {
-                adapter.measureTime(cgAlgo, target, javaOptions)
-            }
-            catch {
-                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
-            }
-        }
+                val timings = (0 until options.measurementRuns).map { i =>
+                    println(s"measurement run ${i + 1}")
+                    val result = tryAwait(options.timeout, measurent)
+                    println(result)
+                    result
+                }
 
-        try {
-            (0 until options.warmupRuns).foreach { i =>
-                println(s"warmup run ${i+1}")
-                val result = tryAwait(options.timeout, warmup)
-                println(result)
-            }
-
-            val timings = (0 until options.measurementRuns).map { i =>
-                println(s"measurement run ${i+1}")
-                val result = tryAwait(options.timeout, measurent)
-                println(result)
-                result
+                reportTiming(timings)
+            } catch {
+                case _: TimeoutException =>
+                    reportTiming(Seq(AnalysisResult.Timeout(options.timeout.seconds.toNanos)))
+                case e: Throwable =>
+                    reportTiming(Seq(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))))
+            } finally {
+                System.gc()
             }
 
-            reportTiming(timings)
-        } catch {
-            case _: TimeoutException =>
-                reportTiming(Seq(AnalysisResult.Timeout(options.timeout.seconds.toNanos)))
-            case e: Throwable =>
-                reportTiming(Seq(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))))
-        } finally {
-            System.gc()
-        }
-
-        def reportTiming(analysisResult: Seq[AnalysisResult]): Unit = {
-            println(analysisResult)
-            val pw = new PrintWriter(outputDirectory.resolve(s"${testCase}-timings.json").toFile)
-            pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
-            pw.close()
+            def reportTiming(analysisResult: Seq[AnalysisResult]): Unit = {
+                println(analysisResult)
+                val pw = new PrintWriter(timingsFile.toFile)
+                pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
+                pw.close()
+            }
         }
     }
 
@@ -186,50 +192,56 @@ object Commandline {
 
         val target = getTarget(options, projectSpec)
         val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
+        val memoryFile = outputDirectory.resolve(s"${testCase}-alloc.json")
 
-        def warmup = Future {
+        if (!options.overwriteResult && Files.exists(memoryFile)) {
+            println(s"Memory file $memoryFile exists. Do not run measurement.")
+        } else {
+
+            def warmup = Future {
+                try {
+                    adapter.warmup(cgAlgo, target, javaOptions)
+                }
+                catch {
+                    case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+                }
+            }
+
+            def measurent = Future {
+                try {
+                    adapter.measureMemory(cgAlgo, target, javaOptions)
+                }
+                catch {
+                    case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+                }
+            }
+
             try {
-                adapter.warmup(cgAlgo, target, javaOptions)
+                // One warmup round to factor out allocations for class loading
+                println(s"warmup run")
+                var result = tryAwait(options.timeout, warmup)
+                println(result)
+
+                System.gc()
+                Thread.sleep(1.seconds.toMillis)
+
+                // Measurement round
+                println(s"measurement run")
+                result = tryAwait(options.timeout, measurent)
+                reportMemory(result)
+            } catch {
+                case _: TimeoutException => reportMemory(AnalysisResult.Timeout(options.timeout.seconds.toNanos))
+                case e: Throwable => reportMemory(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n")))
+            } finally {
+                System.gc()
             }
-            catch {
-                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
+
+            def reportMemory(analysisResult: AnalysisResult): Unit = {
+                println(analysisResult)
+                val pw = new PrintWriter(memoryFile.toFile)
+                pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
+                pw.close()
             }
-        }
-
-        def measurent = Future {
-            try {
-                adapter.measureMemory(cgAlgo, target, javaOptions)
-            }
-            catch {
-                case e: Throwable => AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))
-            }
-        }
-
-        try {
-            // One warmup round to factor out allocations for class loading
-            println(s"warmup run")
-            var result = tryAwait(options.timeout, warmup)
-            println(result)
-
-            System.gc()
-            Thread.sleep(1.seconds.toMillis)
-
-            // Measurement round
-            println(s"measurement run")
-            result = tryAwait(options.timeout, measurent)
-            reportMemory(result)
-        } catch {
-            case _: TimeoutException => reportMemory(AnalysisResult.Timeout(options.timeout.seconds.toNanos))
-            case e: Throwable => reportMemory(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n")))
-        } finally {
-            System.gc()
-        }
-
-        def reportMemory(analysisResult: AnalysisResult): Unit = {
-            println(analysisResult)
-            val pw = new PrintWriter(outputDirectory.resolve(s"${testCase}-alloc.json").toFile)
-            pw.write(Json.prettyPrint(Json.toJson(analysisResult)))
-            pw.close()
         }
     }
 

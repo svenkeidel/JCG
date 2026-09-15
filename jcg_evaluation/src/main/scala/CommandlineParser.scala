@@ -36,7 +36,7 @@ case class CommandlineOptions(
                                  warmupRuns:      Int               = 0,
                                  measurementRuns:   Int               = 1,
 
-                                 overwriteCallgraph:        Boolean = false,
+                                 overwriteResult:           Boolean = false,
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
                                  comparisonName:            String  = "",
                                  comparisonScope: ComparisonScope   = ComparisonScope.All,
@@ -138,8 +138,8 @@ object CommandlineParser {
                 .action((_,c) => c.copy(action = Action.ComputeCallGraph))
                 .text("run call graph analyses on projects")
                 .children(
-                    opt[Unit]("overwrite-callgraph")
-                        .action((_, c) => c.copy(overwriteCallgraph = true))
+                    opt[Unit]("overwrite-result")
+                        .action((_, c) => c.copy(overwriteResult = true))
                         .maxOccurs(1).optional(),
                     opt[String]("analysis-args")
                         .action((args, c) => c.copy(analysisArgs = args))
@@ -161,6 +161,9 @@ object CommandlineParser {
                 .action((_,c) => c.copy(action = Action.MeasureTime))
                 .text("run call graph analyses on projects")
                 .children(
+                    opt[Unit]("overwrite-result")
+                        .action((_, c) => c.copy(overwriteResult = true))
+                        .maxOccurs(1).optional(),
                     opt[String]("analysis-args")
                         .action((args, c) => c.copy(analysisArgs = args))
                         .text("additional arguments passed to the call graph analyses")
@@ -185,6 +188,9 @@ object CommandlineParser {
                 .action((_,c) => c.copy(action = Action.MeasureMemory))
                 .text("run call graph analyses on projects")
                 .children(
+                    opt[Unit]("overwrite-result")
+                        .action((_, c) => c.copy(overwriteResult = true))
+                        .maxOccurs(1).optional(),
                     opt[String]("analysis-args")
                         .action((args, c) => c.copy(analysisArgs = args))
                         .text("additional arguments passed to the call graph analyses")
