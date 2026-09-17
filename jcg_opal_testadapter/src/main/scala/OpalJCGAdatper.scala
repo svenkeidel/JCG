@@ -32,7 +32,7 @@ import scala.jdk.CollectionConverters.*
  */
 object OpalJCGAdatper extends JavaTestAdapter {
 
-    val possibleAlgorithms: Array[String] = Array[String]("CHA", "RTA", "MTA", "CTA", "FTA", "XTA", "0-CFA", "0-1-CFA", "1-0-CFA", "1-1-CFA")
+    val possibleAlgorithms: Array[String] = Array[String]("CHA", "RTA", "MTA", "CTA", "FTA", "XTA", "0-CFA", "0-CFA-REFLECTION", "0-1-CFA", "1-0-CFA", "1-1-CFA")
 
     val frameworkName: String = "Opal"
 
@@ -84,6 +84,11 @@ object OpalJCGAdatper extends JavaTestAdapter {
             .withValue("org.opalj.fpcf.analyses.AllocationSiteBasedPointsToAnalysis.mergeStringConstants", ConfigValueFactory.fromAnyRef(false))
             .withValue("org.opalj.fpcf.analyses.AllocationSiteBasedPointsToAnalysis.mergeClassConstants", ConfigValueFactory.fromAnyRef(false))
 
+        if(algorithm.contains("REFLECTION"))
+            config = config
+                .withValue("org.opalj.fpcf.analyses.cg.reflection.ReflectionRelatedCallsAnalysis.highSoundness", ConfigValueFactory.fromAnyRef("all"))
+                .withValue("org.opalj.fpcf.analyses.fieldaccess.reflection.ReflectionRelatedFieldAccessesAnalysis.highSoundness", ConfigValueFactory.fromAnyRef(true))
+
         // Fix for https://github.com/opalj/JCG/issues/16
         var modules = config.getStringList("org.opalj.tac.cg.PointsTo.modules").asScala.toSet
         modules -= "ReflectionAllocationsAnalysisScheduler"
@@ -99,7 +104,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
             case "CTA" ⇒ CTACallGraphKey
             case "FTA" ⇒ FTACallGraphKey
             case "XTA" ⇒ XTACallGraphKey
-            case "0-CFA" ⇒ TypeBasedPointsToCallGraphKey
+            case "0-CFA" | "0-CFA-REFLECTION" ⇒ TypeBasedPointsToCallGraphKey
             case "0-1-CFA" ⇒ AllocationSiteBasedPointsToCallGraphKey
             case "1-0-CFA" ⇒ CFA_1_0_CallGraphKey
             case "1-1-CFA" ⇒ CFA_1_1_CallGraphKey
