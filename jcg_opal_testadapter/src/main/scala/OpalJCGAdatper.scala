@@ -147,12 +147,13 @@ object OpalJCGAdatper extends JavaTestAdapter {
     override def callGraphToJCG(configuration: Configuration, opalCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] =
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
+        val specialMethods: Set[String] = Set("$string_concat$", "$newInstance$", "$newInstance$", "$object_methods$")
+
         for {
             callerOpal <- opalCallGraph.reachableMethods()
             (pc, targets) <- opalCallGraph.calleesOf(callerOpal.method)
             tgt <- targets
-            if (!callerOpal.method.name.startsWith("$string_concat") && !tgt.method.name.startsWith("$string_concat") &&
-                !callerOpal.method.name.startsWith("$newInstance") && !tgt.method.name.startsWith("$newInstance"))
+            if (specialMethods.forall(specialMethod => !callerOpal.method.name.startsWith(specialMethod) && !tgt.method.name.startsWith(specialMethod)))
         } {
             val caller = opalMethodToJCGMethod(callerOpal.method)
 
@@ -170,7 +171,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
                                 parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](convertTypeName))
                             )
 
-                        case Some(MethodInvocationInstruction(dc, _, name, desc)) =>
+                        case Some(MethodInvocationInstruction(dc, _, name, desc)) if specialMethods.forall(specialMethod => !name.startsWith(specialMethod)) =>
                             Method(
                                 declaringClass = convertTypeName(dc),
                                 name = name,

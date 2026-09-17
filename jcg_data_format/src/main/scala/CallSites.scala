@@ -59,7 +59,7 @@ object ReachableMethods:
                 val caller = Method.fromString(callerStr)
                 val line = lineStr.toInt
                 val pc = pcStr.toIntOption
-                val declaredTarget = try { Method.fromString(declaredTargetStr) } catch { case _: Exception => Method(name = "", declaringClass = "", returnType = "", parameterTypes = ArraySeq.empty) }
+                val declaredTarget = try { Method.fromString(declaredTargetStr) } catch { case _: Throwable => Method(name = "", declaringClass = "", returnType = "", parameterTypes = ArraySeq.empty) }
                 val target = Method.fromString(targetStr)
 
                 val callSite = CallSite(
@@ -116,16 +116,20 @@ object Method {
         if(string.isEmpty)
             Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
         else {
-            val Array(declaringClassStr, returnType, methodDescriptor) = string.split(' ')
-            val declaringClass = declaringClassStr.stripSuffix(":")
-            val Array(name, parameterTypes) = methodDescriptor.split('(')
-            val paramTypes = parameterTypes.stripSuffix(")").split(",")
-            Method(
-                declaringClass = declaringClass,
-                name = name,
-                returnType = returnType,
-                parameterTypes = if(paramTypes.length == 1 && paramTypes(0) == "") ArraySeq.empty else ArraySeq.unsafeWrapArray(paramTypes)
-            )
+            try {
+                val Array(declaringClassStr, returnType, methodDescriptor) = string.split(' ')
+                val declaringClass = declaringClassStr.stripSuffix(":")
+                val Array(name, parameterTypes) = methodDescriptor.split('(')
+                val paramTypes = parameterTypes.stripSuffix(")").split(",")
+                Method(
+                    declaringClass = declaringClass,
+                    name = name,
+                    returnType = returnType,
+                    parameterTypes = if (paramTypes.length == 1 && paramTypes(0) == "") ArraySeq.empty else ArraySeq.unsafeWrapArray(paramTypes)
+                )
+            } catch {
+                case error: MatchError => throw new RuntimeException(s"Error while parsing method signature $string")
+            }
         }
 }
 
