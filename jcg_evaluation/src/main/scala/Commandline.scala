@@ -1,7 +1,7 @@
 import java.io.*
 import java.nio.file.*
 import java.util.zip.GZIPOutputStream
-import play.api.libs.json.{JsValue, Json, Writes, __}
+import play.api.libs.json.{JsNull, JsNumber, JsValue, Json, Writes, __}
 
 import java.nio.charset.StandardCharsets
 import scala.concurrent.Future
@@ -314,8 +314,63 @@ object Commandline {
             println(assessment)
 
             val outputPath = outputDirectory.resolve(s"$testCase-assessment.txt")
-
             Files.write(outputPath, assessment.toString.getBytes(StandardCharsets.UTF_8))
+
+            Files.write(
+                outputDirectory.resolve(s"$testCase-${options.comparisonName}-precision-recall.json"),
+                Json.prettyPrint(
+                    Json.obj(
+                        "methods" ->
+                            Json.obj(
+                                "precision" -> JsNull,
+                                "recall" -> JsNull,
+                                "f1-score" -> JsNull,
+                                "true_positive" -> JsNull,
+                                "false_positive" -> JsNull,
+                                "false_negative" -> JsNull,
+                            ),
+                        "edges" ->
+                            Json.obj(
+                                "precision" -> JsNull,
+                                "recall" -> JsNull,
+                                "f1-score" -> JsNull,
+                                "true_positive" -> JsNull,
+                                "false_positive" -> JsNull,
+                                "false_negative" -> JsNull
+                            ),
+                        "edges-with-callsite-line-numbers" ->
+                            Json.obj(
+                                "precision" -> JsNumber(
+                                    assessment match
+                                        case Sound => 1.0d
+                                        case Imprecise => 0.0d
+                                        case Unsound => 0.0d
+                                        case Error => 0.0d
+                                        case Timeout => 0.0d
+                                ),
+                                "recall" -> JsNumber(
+                                    assessment match
+                                        case Sound => 1.0d
+                                        case Imprecise => 1.0d
+                                        case Unsound => 0.0d
+                                        case Error => 0.0d
+                                        case Timeout => 0.0d
+                                ),
+                                "f1-score" -> JsNumber(
+                                    assessment match
+                                        case Sound => 1.0d
+                                        case Imprecise => 0.5d
+                                        case Unsound => 0.0d
+                                        case Error => 0.0d
+                                        case Timeout => 0.0d
+                                ),
+                                "true_positive" -> JsNull,
+                                "false_positive" -> JsNull,
+                                "false_negative" -> JsNull
+                            )
+                    )
+                ).getBytes(StandardCharsets.UTF_8)
+            )
 
         } catch {
             case exc: Throwable =>
