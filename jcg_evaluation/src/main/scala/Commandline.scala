@@ -275,19 +275,21 @@ object Commandline {
         }
     }
 
-    private def assessCallGraph(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
+    private def assessCallGraph(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, outputDirectory: Path, testCase: String): Unit = {
         try {
+            print(s"assess $testCase: ")
 
-            val callGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
+            val callGraphPath = Util.findCallGraphFile(outputDirectory, testCase)
 
             val assessment: Assessment = options.language match {
                 case "java" =>
+                    val target = getTarget(options, projectSpec)
+                    val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
+
                     val callGraph = Util.readReachableMethods(callGraphPath)
 
                     CGMatcher.matchCallSites(
-                        projectSpec,
-                        jreLocations(projectSpec.java),
-                        callGraphDirectory.toFile,
+                        javaOptions,
                         callGraph,
                         options.debug
                     )
@@ -309,7 +311,9 @@ object Commandline {
                     if (isSound) Sound else Unsound
             }
 
-            val outputPath = callGraphDirectory.resolve(s"$testCase-assessment.txt")
+            println(assessment)
+
+            val outputPath = outputDirectory.resolve(s"$testCase-assessment.txt")
 
             Files.write(outputPath, assessment.toString.getBytes(StandardCharsets.UTF_8))
 

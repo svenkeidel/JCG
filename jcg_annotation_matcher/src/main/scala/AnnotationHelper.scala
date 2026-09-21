@@ -3,16 +3,7 @@ import lib.annotations.callgraph.DirectCalls
 import lib.annotations.callgraph.IndirectCall
 import lib.annotations.callgraph.IndirectCalls
 import org.opalj.br
-import org.opalj.br.Annotation
-import org.opalj.br.AnnotationValue
-import org.opalj.br.ArrayValue
-import org.opalj.br.ClassValue
-import org.opalj.br.ElementValuePair
-import org.opalj.br.IntValue
-import org.opalj.br.ClassType
-import org.opalj.br.StringValue
-import org.opalj.br.Type
-import org.opalj.br.VoidType
+import org.opalj.br.{Annotation, AnnotationValue, ArrayValue, ClassType, ClassTypes, ClassValue, ElementValuePair, IntValue, StringValue, Type, VoidType}
 import org.opalj.br.analyses.SomeProject
 
 /**
@@ -135,7 +126,7 @@ object AnnotationHelper {
     def getResolvedTargets(annotation: Annotation)(implicit p: SomeProject): List[String] = {
         val av = annotation.elementValuePairs collectFirst {
             case ElementValuePair("resolvedTargets", ArrayValue(ab)) ⇒
-                ab.toIndexedSeq.map(_.asInstanceOf[StringValue].value)
+                ab.map(elementValue => JVMType.toJavaType(elementValue.asInstanceOf[StringValue].value))
         }
 
         av.getOrElse(List()).toList
@@ -147,7 +138,7 @@ object AnnotationHelper {
     def getProhibitedTargets(annotation: Annotation)(implicit p: SomeProject): List[String] = {
         val av = annotation.elementValuePairs collectFirst {
             case ElementValuePair("prohibitedTargets", ArrayValue(ab)) ⇒
-                ab.toIndexedSeq.map(_.asInstanceOf[StringValue].value)
+                ab.map(elementValue => JVMType.toJavaType(elementValue.asInstanceOf[StringValue].value))
         }
 
         av.getOrElse(List()).toList

@@ -30,19 +30,21 @@ object CGMatcher {
      *               as root.
      */
     def matchCallSites(
-        projectSpec:         ProjectSpecification,
-        JREPath:             Path,
-        parent:              File,
+        adapterOptions:      AdapterOptions,
         callGraph:           ReachableMethods,
         verbose:             Boolean              = false
     ): Assessment = boundary {
+        val classPath = adapterOptions.getStringArray("classPath")
+        val jdkPath = adapterOptions.getPath("JDKPath")
+        val target = adapterOptions.getString("target")
+
         if (!verbose)
             OPALLogger.updateLogger(GlobalLogContext, new DevNullLogger())
 
-        val jreFiles = JRELocation.getAllJREJars(JREPath).map(_.toFile)
+        val jreFiles = JRELocation.getAllJREJars(jdkPath).map(_.toFile)
         implicit val p: SomeProject = Project(
-            Array(projectSpec.target(parent)) ++ projectSpec.allClassPathEntryFiles(parent) ++ jreFiles,
-            Array.empty[File]
+            projectFiles = Array(File(target)) ++ classPath.map(File(_)),
+            libraryFiles = jreFiles.toArray
         )
 
         for {
@@ -118,7 +120,6 @@ object CGMatcher {
                     val computedTargetClasses = computedTargets.map(_.declaringClass)
 
                     val resolvedTargetClasses = AnnotationHelper.getResolvedTargets(annotation)
-                    AnnotationVerifier.verifyJVMTypes(resolvedTargetClasses)
                     for (annotatedTgtClass <- resolvedTargetClasses) {
                         if (!computedTargetClasses.contains(annotatedTgtClass)) {
                             if (verbose)
@@ -130,7 +131,6 @@ object CGMatcher {
                     }
 
                     val prohibitedTargets = AnnotationHelper.getProhibitedTargets(annotation)
-                    AnnotationVerifier.verifyJVMTypes(prohibitedTargets)
                     for (prohibitedTgt <- prohibitedTargets) {
                         if (computedTargetClasses.contains(prohibitedTgt)) {
                             if (verbose)
@@ -165,11 +165,10 @@ object CGMatcher {
             AnnotationVerifier.verifyCallExistence(annotation, source)
 
             val name = AnnotationHelper.getName(annotation)
-            val returnType = AnnotationHelper.getReturnType(annotation).toJVMTypeName
-            val parameterTypes = AnnotationHelper.getParameterList(annotation).map(_.toJVMTypeName)
+            val returnType = AnnotationHelper.getReturnType(annotation).toJava
+            val parameterTypes = AnnotationHelper.getParameterList(annotation).map(_.toJava)
 
             val resolvedTargets = AnnotationHelper.getResolvedTargets(annotation)
-            AnnotationVerifier.verifyJVMTypes(resolvedTargets)
             for (declaringClass <- resolvedTargets) {
                 val annotatedTarget = Method(name, declaringClass, returnType, ArraySeq.unsafeWrapArray(parameterTypes))
                 if (!callsIndirectly(reachableMethods, annotatedSource, annotatedTarget, verbose))
@@ -177,7 +176,6 @@ object CGMatcher {
             }
 
             val prohibitedTargets = AnnotationHelper.getProhibitedTargets(annotation)
-            AnnotationVerifier.verifyJVMTypes(prohibitedTargets)
             for (prohibitedTgt <- prohibitedTargets) {
                 val annotatedTarget = Method(name, prohibitedTgt, returnType, ArraySeq.unsafeWrapArray(parameterTypes))
                 if (callsIndirectly(reachableMethods, annotatedSource, annotatedTarget, verbose))
@@ -230,9 +228,9 @@ object CGMatcher {
 
     private def convertMethod(method: org.opalj.br.Method): Method = {
         val name = method.name
-        val declaringClass = method.classFile.thisType.toJVMTypeName
-        val returnType = method.returnType.toJVMTypeName
-        val parameterTypes = method.parameterTypes.map(_.toJVMTypeName).toArray
+        val declaringClass = method.classFile.thisType.toJava
+        val returnType = method.returnType.toJava
+        val parameterTypes = method.parameterTypes.map(_.toJava).toArray
 
         Method(name = name, declaringClass = declaringClass, returnType = returnType, parameterTypes = ArraySeq.unsafeWrapArray(parameterTypes))
     }

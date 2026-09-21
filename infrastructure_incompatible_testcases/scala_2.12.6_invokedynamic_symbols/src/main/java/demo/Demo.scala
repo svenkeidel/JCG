@@ -15,7 +15,7 @@ class Demo {
         println(m.toString)
     }
 
-    @IndirectCall(name = "<init>", line = 20, resolvedTargets = Array("Lscala/Symbol;"),
+    @IndirectCall(name = "<init>", line = 21, resolvedTargets = Array("Lscala/Symbol;"),
 	parameterTypes = Array(classOf[String]))
     def main() : Unit = {
         m('mySymbol)

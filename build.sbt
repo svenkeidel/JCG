@@ -5,6 +5,8 @@ ThisBuild / javacOptions ++= Seq("-encoding", "utf8", "-parameters")
 
 ThisBuild / excludeDependencies += "org.scala-lang.modules" % "scala-xml_2.13"
 
+ThisBuild / Compile / packageDoc / publishArtifact := false
+
 lazy val commonSettings = Seq(
     scalaVersion := "3.7.3",
     organization := "de.opal-project",

@@ -32,7 +32,7 @@ import scala.jdk.CollectionConverters.*
  */
 object OpalJCGAdatper extends JavaTestAdapter {
 
-    val possibleAlgorithms: Array[String] = Array[String]("CHA", "RTA", "MTA", "CTA", "FTA", "XTA", "0-CFA", "0-CFA-REFLECTION", "0-1-CFA", "1-0-CFA", "1-1-CFA")
+    val possibleAlgorithms: Array[String] = Array[String]("CHA", "RTA", "MTA", "CTA", "FTA", "XTA", "0-CFA", "0-1-CFA", "1-0-CFA", "1-1-CFA")
 
     val frameworkName: String = "Opal"
 
