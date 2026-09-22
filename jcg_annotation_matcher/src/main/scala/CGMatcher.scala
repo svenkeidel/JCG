@@ -41,17 +41,27 @@ object CGMatcher {
         if (!verbose)
             OPALLogger.updateLogger(GlobalLogContext, new DevNullLogger())
 
+        val projectFiles = (classPath.prepended(target)).map(File(_))
         val jreFiles = JRELocation.getAllJREJars(jdkPath).map(_.toFile)
+
+        projectFiles.find(file => !file.exists()) match {
+            case Some(file) => throw java.io.IOException(s"File $file does not exist")
+            case None => {}
+        }
+
         implicit val p: SomeProject = Project(
-            projectFiles = Array(File(target)) ++ classPath.map(File(_)),
+            projectFiles = projectFiles,
             libraryFiles = jreFiles.toArray
         )
 
+        var annotatedMethodFound = false
         for {
-            clazz ← p.allProjectClassFiles
-            method ← clazz.methodsWithBody
+            clazz <- p.allProjectClassFiles
+            method <- clazz.methodsWithBody
             if AnnotationHelper.isAnnotatedMethod(method)
         } {
+            annotatedMethodFound = true
+
             // check if the call site might not be ambiguous
             AnnotationVerifier.verifyNoAmbiguousCalls(method)
 
@@ -90,7 +100,10 @@ object CGMatcher {
 
         }
 
-        Sound
+        if(annotatedMethodFound)
+            Sound
+        else
+            throw RuntimeException(s"No annotated method found in ${projectFiles.mkString(", ")}")
     }
 
     /**
