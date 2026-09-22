@@ -317,7 +317,7 @@ object Commandline {
             Files.write(outputPath, assessment.toString.getBytes(StandardCharsets.UTF_8))
 
             Files.write(
-                outputDirectory.resolve(s"$testCase-${options.comparisonName}-precision-recall.json"),
+                outputDirectory.resolve(s"$testCase-precision-recall.json"),
                 Json.prettyPrint(
                     Json.obj(
                         "methods" ->
