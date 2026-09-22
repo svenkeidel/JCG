@@ -34,7 +34,8 @@ case class CommandlineOptions(
                                  analyzeJdk:      Boolean           = false,
                                  analysisArgs:    String            = "",
                                  warmupRuns:      Int               = 0,
-                                 measurementRuns:   Int               = 1,
+                                 measurementRuns: Int               = 1,
+                                 onTheFlyIR:      Boolean           = false,
 
                                  overwriteResult:           Boolean = false,
                                  truthCallGraphsDirectory:  Path    = Paths.get("."),
@@ -164,6 +165,9 @@ object CommandlineParser {
                     opt[Unit]("overwrite-result")
                         .action((_, c) => c.copy(overwriteResult = true))
                         .maxOccurs(1).optional(),
+                    opt[Unit]("on-the-fly-ir")
+                        .action((n, c) => c.copy(onTheFlyIR = true))
+                        .maxOccurs(1).optional(),
                     opt[String]("analysis-args")
                         .action((args, c) => c.copy(analysisArgs = args))
                         .text("additional arguments passed to the call graph analyses")
@@ -190,6 +194,9 @@ object CommandlineParser {
                 .children(
                     opt[Unit]("overwrite-result")
                         .action((_, c) => c.copy(overwriteResult = true))
+                        .maxOccurs(1).optional(),
+                    opt[Unit]("on-the-fly-ir")
+                        .action((n, c) => c.copy(onTheFlyIR = true))
                         .maxOccurs(1).optional(),
                     opt[String]("analysis-args")
                         .action((args, c) => c.copy(analysisArgs = args))

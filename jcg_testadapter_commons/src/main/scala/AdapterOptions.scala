@@ -34,7 +34,8 @@ object AdapterOptions {
        analyzeJDK:  Boolean,
        target:      String        = "",
        jvmArgs:     Array[String] = Array.empty,
-       analysisArguments: Array[String] = Array.empty
+       analysisArguments: Array[String] = Array.empty,
+       onTheFlyIR:  Boolean       = true
     ): AdapterOptions = {
         new AdapterOptions(Map(
             "testCase" -> testCase,
@@ -46,7 +47,8 @@ object AdapterOptions {
             "target" -> target,
             "jvmArgs" -> jvmArgs,
             "analyzeJDK" -> analyzeJDK,
-            "analysisArgs" -> analysisArguments
+            "analysisArgs" -> analysisArguments,
+            "onTheFlyIR" -> onTheFlyIR
         ))
     }
 

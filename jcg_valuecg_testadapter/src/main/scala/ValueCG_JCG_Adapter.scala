@@ -128,6 +128,8 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
         SerializedCallgraph.readFromFileCompressed(configuration.outDir.resolve("ValDroid.json.gz").toFile)
     }
 
+    override def computeCallGraphWithOnTheFlyIR(configuration: Configuration): CallGraph = computeCallGraph(configuration)
+
     override def callGraphToJCG(configuration: Configuration, valueCgCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 

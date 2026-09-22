@@ -130,7 +130,8 @@ object Commandline {
 
         val target = getTarget(options, projectSpec)
         val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
-        val timingsFile = outputDirectory.resolve(s"${testCase}-timings.json")
+        val irString = if(options.onTheFlyIR) "on-the-fly-ir" else "a-priori-ir"
+        val timingsFile = outputDirectory.resolve(s"${testCase}-$irString-timings.json")
 
         if (!options.overwriteResult && Files.exists(timingsFile)) {
             println(s"Timing file $timingsFile exists. Do not run measurement.")
@@ -192,7 +193,8 @@ object Commandline {
 
         val target = getTarget(options, projectSpec)
         val javaOptions = getJavaOptions(options, projectSpec, jreLocations, outputDirectory, testCase)
-        val memoryFile = outputDirectory.resolve(s"${testCase}-alloc.json")
+        val irString = if (options.onTheFlyIR) "on-the-fly-ir" else "a-priori-ir"
+        val memoryFile = outputDirectory.resolve(s"${testCase}-$irString-alloc.json")
 
         if (!options.overwriteResult && Files.exists(memoryFile)) {
             println(s"Memory file $memoryFile exists. Do not run measurement.")
@@ -512,7 +514,8 @@ object Commandline {
             target = projectSpec.target(options.projectsDir.toFile).toString,
             jvmArgs = projectSpec.jvm_args.getOrElse(Array.empty[String]),
             analyzeJDK = options.analyzeJdk,
-            analysisArguments = options.analysisArgs.split(" ")
+            analysisArguments = options.analysisArgs.split(" "),
+            onTheFlyIR = options.onTheFlyIR
         )
     }
 

@@ -29,6 +29,7 @@ trait JavaTestAdapter extends TestAdapter {
     def parseClassFilesAndGenerateIR(configuration: Configuration): Unit
 
     def computeCallGraph(configuration: Configuration): CallGraph
+    def computeCallGraphWithOnTheFlyIR(configuration: Configuration): CallGraph
 
     def callGraphToJCG(configuration: Configuration, callGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 
@@ -39,10 +40,15 @@ trait JavaTestAdapter extends TestAdapter {
         val jdkPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
         val target = adapterOptions.getString("target")
+        val onTheFlyIR = adapterOptions.getBoolean("onTheFlyIR")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            parseClassFilesAndGenerateIR(configuration)
-            computeCallGraph(configuration)
+            if(onTheFlyIR) {
+                computeCallGraphWithOnTheFlyIR(configuration)
+            } else {
+                parseClassFilesAndGenerateIR(configuration)
+                computeCallGraph(configuration)
+            }
             AnalysisResult.Success(JsNull)
         }
 
@@ -53,24 +59,36 @@ trait JavaTestAdapter extends TestAdapter {
         val jdkPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
         val target = adapterOptions.getString("target")
+        val onTheFlyIR = adapterOptions.getBoolean("onTheFlyIR")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
             Time.settleDown()
 
-            val irGenerationStart = Time()
-            parseClassFilesAndGenerateIR(configuration)
-            val irGenerationEnd = Time()
+            if(onTheFlyIR) {
+                val callGraphComputationStart = Time()
+                val callGraph = computeCallGraphWithOnTheFlyIR(configuration)
+                val callGraphComputationEnd = Time()
 
-            Time.settleDown()
+                AnalysisResult.Success(Json.obj(
+                    "callGraphComputationWithOnTheFlyIR" -> (callGraphComputationEnd - callGraphComputationStart)
+                ))
+            } else {
 
-            val callGraphComputationStart = Time()
-            val callGraph = computeCallGraph(configuration)
-            val callGraphComputationEnd = Time()
+                val irGenerationStart = Time()
+                parseClassFilesAndGenerateIR(configuration)
+                val irGenerationEnd = Time()
 
-            AnalysisResult.Success(Json.obj(
-                "parseClassFilesAndGenerateIr" -> (irGenerationEnd - irGenerationStart),
-                "callGraphComputation" -> (callGraphComputationEnd - callGraphComputationStart)
-            ))
+                Time.settleDown()
+
+                val callGraphComputationStart = Time()
+                val callGraph = computeCallGraph(configuration)
+                val callGraphComputationEnd = Time()
+
+                AnalysisResult.Success(Json.obj(
+                    "parseClassFilesAndGenerateIr" -> (irGenerationEnd - irGenerationStart),
+                    "callGraphComputation" -> (callGraphComputationEnd - callGraphComputationStart)
+                ))
+            }
         }
 
     override def measureMemory(algorithm: String, inputDirPath: String, adapterOptions: AdapterOptions): AnalysisResult =
@@ -82,30 +100,43 @@ trait JavaTestAdapter extends TestAdapter {
         val target = adapterOptions.getString("target")
         val outputDirectory = adapterOptions.getPath("outputDirectory")
         val testCase = adapterOptions.getString("testCase")
+        val onTheFlyIR = adapterOptions.getBoolean("onTheFlyIR")
+        val irString = if(onTheFlyIR) "on-the-fly-ir" else "a-priori-ir"
 
         val profiler = AsyncProfiler.getInstance()
 
         val configureJFR = outputDirectory.resolve(s"$testCase-configure-alloc.jfr")
-        val parseClassFilesAndGenerateIRJFR = outputDirectory.resolve(s"$testCase-generate-ir-alloc.jfr")
-        val callGraphJFR = outputDirectory.resolve(s"$testCase-callgraph-alloc.jfr")
+        val parseClassFilesAndGenerateIRJFR = outputDirectory.resolve(s"$testCase-$irString-generate-ir-alloc.jfr")
+        val callGraphJFR = outputDirectory.resolve(s"$testCase-$irString-callgraph-alloc.jfr")
 
         profiler.execute(s"start,jfr,event=alloc,file=$configureJFR")
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
             profiler.execute("stop")
 
-            profiler.execute(s"start,jfr,event=alloc,file=$parseClassFilesAndGenerateIRJFR")
-            parseClassFilesAndGenerateIR(configuration)
-            profiler.execute("stop")
+            if(onTheFlyIR) {
+                profiler.execute(s"start,jfr,event=alloc,file=$callGraphJFR")
+                computeCallGraphWithOnTheFlyIR(configuration)
+                profiler.execute("stop")
 
-            profiler.execute(s"start,jfr,event=alloc,file=$callGraphJFR")
-            computeCallGraph(configuration)
-            profiler.execute("stop")
+                AnalysisResult.Success(Json.obj(
+                    "configure" -> sumAllocations(configureJFR),
+                    "callgraphWithOnTheFlyIR" -> sumAllocations(callGraphJFR)
+                ))
+            } else {
+                profiler.execute(s"start,jfr,event=alloc,file=$parseClassFilesAndGenerateIRJFR")
+                parseClassFilesAndGenerateIR(configuration)
+                profiler.execute("stop")
 
-            AnalysisResult.Success(Json.obj(
-                "configure" -> sumAllocations(configureJFR),
-                "parseClassFilesAndGenerateIR" -> sumAllocations(parseClassFilesAndGenerateIRJFR),
-                "callgraph" -> sumAllocations(callGraphJFR)
-            ))
+                profiler.execute(s"start,jfr,event=alloc,file=$callGraphJFR")
+                computeCallGraph(configuration)
+                profiler.execute("stop")
+
+                AnalysisResult.Success(Json.obj(
+                    "configure" -> sumAllocations(configureJFR),
+                    "parseClassFilesAndGenerateIR" -> sumAllocations(parseClassFilesAndGenerateIRJFR),
+                    "callgraph" -> sumAllocations(callGraphJFR)
+                ))
+            }
         }
 
     private def sumAllocations(jfrFile: Path): Long =

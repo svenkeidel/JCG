@@ -114,6 +114,12 @@ object SootJCGAdapter extends JavaTestAdapter {
         configuration.soot_Scene().getCallGraph
     }
 
+    override def computeCallGraphWithOnTheFlyIR(configuration: Configuration): CallGraph = {
+        configuration.soot_Scene().loadNecessaryClasses()
+        configuration.soot_PackManager().runPacks()
+        configuration.soot_Scene().getCallGraph
+    }
+
     override def callGraphToJCG(configuration: Configuration, sootCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
         val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 

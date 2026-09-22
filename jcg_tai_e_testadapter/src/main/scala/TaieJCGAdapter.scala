@@ -7,6 +7,7 @@ import pascal.taie.ir.stmt.Invoke
 import pascal.taie.language.classes.JMethod
 import pascal.taie.analysis.AnalysisManager
 import org.apache.commons.io.FileUtils
+import pascal.taie.analysis.graph.callgraph
 
 import scala.collection.compat.immutable.ArraySeq
 import scala.collection.mutable
@@ -79,6 +80,9 @@ object TaieJCGAdapter extends JavaTestAdapter {
         }
 
     override def parseClassFilesAndGenerateIR(configuration: Configuration): Unit = {
+        val preBuildIR = configuration.options.getClass.getDeclaredField("preBuildIR")
+        preBuildIR.setAccessible(true)
+        preBuildIR.set(configuration.options, true)
         configuration.builder.build(configuration.options)
     }
 
@@ -88,6 +92,12 @@ object TaieJCGAdapter extends JavaTestAdapter {
         new AnalysisManager(configuration.plan).execute()
         World.get().getResult(CallGraphBuilder.ID)
     }
+
+    override def computeCallGraphWithOnTheFlyIR(configuration: TaieConfiguration): CallGraph =
+        configuration.builder.build(configuration.options)
+        new AnalysisManager(configuration.plan).execute()
+        World.get().getResult(CallGraphBuilder.ID)
+
 
     override def callGraphToJCG(configuration: Configuration, taieCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
         val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]

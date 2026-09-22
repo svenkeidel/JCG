@@ -73,7 +73,6 @@ object SootUpJCGAdapter extends JavaTestAdapter {
     override def parseClassFilesAndGenerateIR(configuration: SootUpConfiguration): Unit =
         configuration.view = new JavaView(configuration.inputLocations.asJava, new FullCacheProvider, LoadingStrategy.eager())
 
-
     override type CallGraph = sootup.callgraph.CallGraph
 
     override def computeCallGraph(configuration: Configuration): CallGraph =
@@ -86,6 +85,11 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             val mainMethod = idFactory.getMethodSignature(mainClassType, "main", VoidType.getInstance(), List(stringArrayType).asJava)
             configuration.algorithm(configuration.view).initialize(List(mainMethod).asJava)
         }
+
+    override def computeCallGraphWithOnTheFlyIR(configuration: SootUpConfiguration): CallGraph = {
+        configuration.view = new JavaView(configuration.inputLocations.asJava)
+        computeCallGraph(configuration)
+    }
 
     override def callGraphToJCG(configuration: Configuration, sootUpCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
         val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]

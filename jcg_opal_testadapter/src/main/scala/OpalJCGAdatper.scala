@@ -144,6 +144,28 @@ object OpalJCGAdatper extends JavaTestAdapter {
         val declaredMethods: DeclaredMethods = configuration.project.get(DeclaredMethodsKey)
         opalCallGraph
 
+    override def computeCallGraphWithOnTheFlyIR(configuration: Configuration): CallGraph =
+        implicit val config: Config = configuration.config
+
+        val cfReader = JavaClassFileReader
+        val targetClassFiles = cfReader.ClassFiles(new File(configuration.target))
+        val cpClassFiles = cfReader.AllClassFiles(configuration.classPath.map(new File(_)))
+        val jre = cfReader.AllClassFiles(configuration.jreJars)
+        val allClassFiles = targetClassFiles ++ cpClassFiles ++ (if (configuration.analyzeJDK) jre else Seq.empty)
+        val libClassFiles = if (configuration.analyzeJDK) Seq.empty else Project.JavaLibraryClassFileReader.AllClassFiles(configuration.jreJars)
+
+        configuration.project = Project(
+            allClassFiles,
+            libClassFiles,
+            libraryClassFilesAreInterfacesOnly = true,
+            Seq.empty
+        )
+
+        val opalCallGraph = configuration.project.get(configuration.callGraphKey)
+        val typeIterator: TypeIterator = configuration.project.get(TypeIteratorKey)
+        val declaredMethods: DeclaredMethods = configuration.project.get(DeclaredMethodsKey)
+        opalCallGraph
+
     override def callGraphToJCG(configuration: Configuration, opalCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] =
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
 

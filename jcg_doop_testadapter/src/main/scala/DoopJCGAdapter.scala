@@ -149,6 +149,11 @@ object DoopAdapter extends JavaTestAdapter {
         val methodInvocationLinesCsv = database.resolve("MethodInvocation-Line.facts")
         DoopCallGraph(database, methodInvocationLinesCsv, callGraphCsv)
 
+    override def computeCallGraphWithOnTheFlyIR(configuration: Configuration): CallGraph = {
+        parseClassFilesAndGenerateIR(configuration)
+        computeCallGraph(configuration)
+    }
+
     override def callGraphToJCG(configuration: Configuration, callGraph: DoopCallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] =
         Using.Manager { use =>
             val methodInvocationCsv = use(Source.fromFile(callGraph.methodInvocationLinesCSV.toFile))

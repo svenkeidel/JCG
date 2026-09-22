@@ -117,6 +117,25 @@ object WalaJCGAdapter extends JavaTestAdapter {
             case _ => throw new IllegalArgumentException
     }
 
+    override def computeCallGraphWithOnTheFlyIR(configuration: WalaConfiguration): CallGraph = {
+        val scope = AnalysisScopeReader.instance.makeJavaBinaryAnalysisScope(configuration.classPath.mkString(File.pathSeparator), configuration.exclusionsFile)
+
+        configuration.classHierarchy = ClassHierarchyFactory.make(scope)
+
+        val entrypoints =
+            if (configuration.mainClass == null) {
+                new AllSubtypesOfApplicationEntrypoints(scope, configuration.classHierarchy)
+            } else {
+                val mainClassWala = "L" + configuration.mainClass.replace(".", "/")
+                Util.makeMainEntrypoints(configuration.classHierarchy, mainClassWala)
+            }
+
+        configuration.options = new AnalysisOptions(scope, entrypoints)
+        configuration.options.setReflectionOptions(AnalysisOptions.ReflectionOptions.FULL)
+
+        computeCallGraph(configuration)
+    }
+
     override def callGraphToJCG(configuration: WalaConfiguration, walaCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
 
         val bootstrapMethods = getBootstrapMethods(walaCallGraph)
