@@ -238,7 +238,14 @@ object CommandlineParser {
 
             cmd("assess")
                 .action((_,c) => c.copy(action = Action.Assess))
-                .text("Assess soundness and precision of call graph analyses"),
+                .text("Assess soundness and precision of call graph analyses")
+                .children(
+                    opt[String]("comparison-name")
+                        .action((comparison, c) => c.copy(comparisonName = comparison))
+                        .text("Name for the call-graph measurement. The name is appended to the json file name that contains the assessment.")
+                        .maxOccurs(1)
+                        .required()
+                ),
 
             cmd("size")
                 .action((_,c) => c.copy(action = Action.Size))
