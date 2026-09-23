@@ -162,8 +162,7 @@ trait JavaTestAdapter extends TestAdapter {
         val target = adapterOptions.getString("target")
 
         configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            parseClassFilesAndGenerateIR(configuration)
-            val callGraph = computeCallGraph(configuration)
+            val callGraph = computeCallGraphWithOnTheFlyIR(configuration)
             val jcgCallGraph = callGraphToJCG(configuration, callGraph)
             val reachableMethods = ReachableMethods(jcgCallGraph)
             reachableMethods.writeCsv(output)

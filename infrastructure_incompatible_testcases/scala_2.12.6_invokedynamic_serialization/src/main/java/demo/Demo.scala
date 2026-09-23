@@ -11,7 +11,7 @@ import java.io._
  */
 class Demo {
 
-    @IndirectCall(name = "twice", line = 21, resolvedTargets = Array("Ldemo/Demo$;"),
+    @IndirectCall(name = "twice", line = 21, resolvedTargets = Array("Ldemo/Main$;"),
         returnType= classOf[Int], parameterTypes = Array(classOf[Int]))
     def m2(d : Array[Byte] , i : Int) : Unit = {
         val bin = new ByteArrayInputStream(d)
@@ -22,7 +22,7 @@ class Demo {
     }
 }
 
-object Demo {
+object Main {
 
     def m1() : Array[Byte] = {
         val bout = new ByteArrayOutputStream()

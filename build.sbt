@@ -20,6 +20,7 @@ lazy val commonSettings = Seq(
 )
 
 val opalVersion = "7.0.1-SNAPSHOT"
+val sootUpVersion = "3.0.2-SNAPSHOT"
 val playJsonVersion = "3.0.6"
 val fasterXmlJacksonVersion = "2.21.2"
 val commonsIoVersion = "2.14.0"
@@ -94,16 +95,16 @@ lazy val jcg_soot_testadapter = project.settings(
 lazy val jcg_sootup_testadapter = project.settings(
     commonSettings,
     name := "JCG SootUp Test Adapter",
-    libraryDependencies += "org.soot-oss" % "sootup.core" % "3.0.1",
-    libraryDependencies += "org.soot-oss" % "sootup.java.core" % "3.0.1",
-    libraryDependencies += "org.soot-oss" % "sootup.java.bytecode.frontend" % "3.0.1",
-    libraryDependencies += "org.soot-oss" % "sootup.jimple.frontend" % "3.0.1",
-    libraryDependencies += "org.soot-oss" % "sootup.callgraph" % "3.0.1",
-    libraryDependencies += "org.soot-oss" % "sootup.qilin" % "3.0.1",
-
+    libraryDependencies += "org.soot-oss" % "sootup.core" % sootUpVersion,
+    libraryDependencies += "org.soot-oss" % "sootup.java.core" % sootUpVersion,
+    libraryDependencies += "org.soot-oss" % "sootup.java.bytecode.frontend" % sootUpVersion,
+    libraryDependencies += "org.soot-oss" % "sootup.jimple.frontend" % sootUpVersion,
+    libraryDependencies += "org.soot-oss" % "sootup.callgraph" % sootUpVersion,
+    libraryDependencies += "org.soot-oss" % "sootup.qilin" % sootUpVersion,
     libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
     libraryDependencies += "org.slf4j" % "slf4j-simple" % "2.0.13",
     libraryDependencies += "org.jspecify" % "jspecify" % "1.0.0",
+    resolvers += Resolver.mavenLocal,
     assembly / aggregate := false,
     publishArtifact := false
 ).dependsOn(jcg_testadapter_commons)

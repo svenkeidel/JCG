@@ -15,7 +15,7 @@ class Demo {
     }
 }
 
-object Demo {
+object Main {
     def main(args : Array[String]) : Unit = {
         new Demo().m(new X())
     }

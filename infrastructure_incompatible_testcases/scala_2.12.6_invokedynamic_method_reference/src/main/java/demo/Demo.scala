@@ -11,14 +11,14 @@ import java.io._
  */
 class Demo {
 
-    @IndirectCall(name = "twice", line = 17, resolvedTargets = Array("Ldemo/Demo$;"), 
+    @IndirectCall(name = "twice", line = 17, resolvedTargets = Array("Ldemo/Main$;"),
     	returnType= classOf[Int], parameterTypes = Array(classOf[Int]))
     def m(m : Int => Int) : Unit = {
         println(m(2))
     }
 }
 
-object Demo {	
+object Main {
     def twice(i : Int) : Int = i * 2
 
     def main(args : Array[String]) : Unit = {
