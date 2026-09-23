@@ -159,7 +159,7 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
     @Override
     public @NonNull Stream<JavaSootClassSource> getClassSources(@NonNull View view) {
 
-        Collection<ModuleSignature> moduleSignatures = discoverModules();
+        Collection<ModuleSignature> moduleSignatures = discoverModules(view.getIdentifierFactory());
         return moduleSignatures.stream()
                 .flatMap(sig -> getClassSourcesInternal(sig, view.getIdentifierFactory(), view));
     }
@@ -167,10 +167,11 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
     /**
      * Discover and return all modules contained in the jrt filesystem.
      *
+     * @param identifierFactory the factory that creates the module signatures
      * @return Collection of found module names.
      */
     @NonNull
-    public Collection<ModuleSignature> discoverModules() {
+    public Collection<ModuleSignature> discoverModules(@NonNull IdentifierFactory identifierFactory) {
         if (!isResolved) {
             final Path moduleRoot = theFileSystem.getPath("modules");
             final String moduleInfoFilename = JavaModuleIdentifierFactory.MODULE_INFO_FILE + ".class";
@@ -182,7 +183,8 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
                                     JavaModuleIdentifierFactory.getModuleSignature(entry.subpath(1, 2).toString());
                             Path moduleInfo = entry.resolve(moduleInfoFilename);
                             if (Files.exists(moduleInfo)) {
-                                moduleInfoMap.put(moduleSignature, new AsmModuleSource(moduleInfo));
+                                moduleInfoMap.put(
+                                        moduleSignature, new AsmModuleSource(moduleInfo, identifierFactory));
                             } else {
                                 moduleInfoMap.put(
                                         moduleSignature, JavaModuleInfo.createAutomaticModuleInfo(moduleSignature));
@@ -225,7 +227,7 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
     @Override
     public Optional<JavaModuleInfo> getModuleInfo(ModuleSignature sig, View view) {
         if (!isResolved) {
-            discoverModules();
+            discoverModules(view.getIdentifierFactory());
         }
         return Optional.ofNullable(moduleInfoMap.get(sig));
     }
@@ -234,7 +236,7 @@ public class CustomJrtFileSystemAnalysisInputLocation implements ModuleInfoAnaly
     @Override
     public Set<ModuleSignature> getModules(View view) {
         if (!isResolved) {
-            discoverModules();
+            discoverModules(view.getIdentifierFactory());
         }
         return Collections.unmodifiableSet(moduleInfoMap.keySet());
     }
