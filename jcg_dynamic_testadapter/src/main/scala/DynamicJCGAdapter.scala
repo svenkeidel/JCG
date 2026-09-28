@@ -253,23 +253,24 @@ object DynamicJCGAdapter extends TestAdapter {
             stackTraces(callee).flatMap(stackTrace => stackTrace.lift(1))
 
         def toReachableMethods: ReachableMethods =
-            val reachableMethods = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+            val reachableMethods = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
             addReachableMethods(reachableMethods)
             val defaultDeclaredTarget = Method(name = "", declaringClass = "", returnType = "", parameterTypes = ArraySeq.empty)
             ReachableMethods(reachableMethods.view.map((method, callSiteMap) =>
                 method ->
                     callSiteMap.view.map((callSite, targets) =>
-                        new OuterCallSite(declaredTarget = callSite.declaredTarget.getOrElse(defaultDeclaredTarget), line = callSite.line, pc = Some(callSite.pc)) -> targets.toSet
+                        new OuterCallSite(declaredTarget = callSite.declaredTarget.getOrElse(defaultDeclaredTarget), line = callSite.line, pc = Some(callSite.pc)) ->
+                            targets.toSet
                     ).toMap
                 ).toMap
             )
 
-        private def addReachableMethods(reachableMethods: mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]]): Unit =
+        private def addReachableMethods(reachableMethods: mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]): Unit =
             for ((callSite, subTree) <- callSites) {
                 val method = callSite.method
                 val callSiteMap = reachableMethods.getOrElseUpdate(callSite.method, mutable.Map.empty)
                 val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-                targets ++= subTree.callSites.keySet.map(_.method)
+                targets ++= subTree.callSites.keySet.map(callSite => CallTarget(callSite.method))
 
                 subTree.addReachableMethods(reachableMethods)
             }

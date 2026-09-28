@@ -130,8 +130,8 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
 
     override def computeCallGraphWithOnTheFlyIR(configuration: Configuration): CallGraph = computeCallGraph(configuration)
 
-    override def callGraphToJCG(configuration: Configuration, valueCgCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
-        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+    override def callGraphToJCG(configuration: Configuration, valueCgCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]] = {
+        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
 
         for (edge <- valueCgCallGraph.edges.asScala) {
             try {
@@ -151,7 +151,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
 
                 val callSiteMap = callGraph.getOrElseUpdate(sourceMethod, mutable.Map.empty)
                 val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-                targets += targetMethod
+                targets += CallTarget(targetMethod,edge.reasoning)
 
             } catch {
                 case e: Exception =>

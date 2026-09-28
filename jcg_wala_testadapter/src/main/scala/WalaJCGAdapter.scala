@@ -136,11 +136,11 @@ object WalaJCGAdapter extends JavaTestAdapter {
         computeCallGraph(configuration)
     }
 
-    override def callGraphToJCG(configuration: WalaConfiguration, walaCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
+    override def callGraphToJCG(configuration: WalaConfiguration, walaCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]] = {
 
         val bootstrapMethods = getBootstrapMethods(walaCallGraph)
 
-        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
 
         for (callerWala <- walaCallGraph.asScala;
              caller = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, callerWala.getMethod.getReference);
@@ -159,7 +159,7 @@ object WalaJCGAdapter extends JavaTestAdapter {
 
             val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map())
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-            targets += target
+            targets += CallTarget(target)
         }
 
         jcgCallGraph

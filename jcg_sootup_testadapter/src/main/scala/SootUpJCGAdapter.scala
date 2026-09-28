@@ -91,8 +91,8 @@ object SootUpJCGAdapter extends JavaTestAdapter {
         computeCallGraph(configuration)
     }
 
-    override def callGraphToJCG(configuration: Configuration, sootUpCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
-        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+    override def callGraphToJCG(configuration: Configuration, sootUpCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]] = {
+        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
 
         for (sootUpCaller <- sootUpCallGraph.getMethodSignatures.asScala;
              caller = sootMethodToJCGMethod(sootUpCaller);
@@ -119,7 +119,7 @@ object SootUpJCGAdapter extends JavaTestAdapter {
 
             val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-            targets += target
+            targets += CallTarget(target)
         }
 
         jcgCallGraph

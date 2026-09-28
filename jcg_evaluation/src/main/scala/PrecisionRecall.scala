@@ -81,8 +81,8 @@ case class EdgeClassification(actualPositive: Set[Edge], predictedPositive: Set[
 //        }
 //        TransitiveClosureSize(methods = transitiveClosureMethods.size, edges = transitiveClosureEdges.size)
 
-def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]],
-                        predictedCallGraph: Map[Method, Map[CallSite, Set[Method]]],
+def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[CallTarget]]],
+                        predictedCallGraph: Map[Method, Map[CallSite, Set[CallTarget]]],
                         packageScope: Regex,
                         reachableMethodsInclude: Regex,
                         edgeInclude: Regex,
@@ -92,8 +92,8 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]]
                         computeFalseNegativeClosureSize: Boolean
                        ): PrecisionRecall =
 
-    def filterMethods(callGraph: Map[Method, Map[CallSite, Set[Method]]]): Set[Method] = {
-        val methods = callGraph.flatMap((method,callSitesMap) => callSitesMap.values.flatten.toSet + method).toSet
+    def filterMethods(callGraph: Map[Method, Map[CallSite, Set[CallTarget]]]): Set[Method] = {
+        val methods = callGraph.flatMap((method,callSitesMap) => callSitesMap.values.flatten.map(_.method).toSet + method).toSet
         methods.filter(method =>
             packageScope.matches(method.declaringClass) &&
                 reachableMethodsInclude.matches(method.declaringClass) &&
@@ -104,12 +104,12 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]]
     def internalMethod(method: Method): Boolean =
         (method.declaringClass.endsWith("$$Lambda") && (method.name == "get$Lambda" || method.name == "<init>"))
 
-    def filterEdges(cg: Map[Method, Map[CallSite, Set[Method]]]): Set[Edge] =
+    def filterEdges(cg: Map[Method, Map[CallSite, Set[CallTarget]]]): Set[Edge] =
         val result = for {
             (caller, callSiteMap) <- cg;
             (callSite,targets) <- callSiteMap;
             target <- targets
-            edge = Edge(caller = caller, line = Some(callSite.line), declaredTarget = callSite.declaredTarget, target = target)
+            edge = Edge(caller = caller, line = Some(callSite.line), declaredTarget = callSite.declaredTarget, target = target.method)
             if(includeEdge(edge))
         } yield(removeCallerAndLineNumberOfStaticInitializers(edge))
 
@@ -151,13 +151,13 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]]
         else
             edge
 
-    def removeCallsToDynamicallyGeneratedClosureClasses(cg: Map[Method, Map[CallSite, Set[Method]]]): Map[Method, Map[CallSite, Set[Method]]] =
+    def removeCallsToDynamicallyGeneratedClosureClasses(cg: Map[Method, Map[CallSite, Set[CallTarget]]]): Map[Method, Map[CallSite, Set[CallTarget]]] =
         var callGraph = cg
         for((caller,callSiteMap) <- cg;
             (callSite,targets) <- callSiteMap;
             closure <- targets;
-            if(closure.declaringClass.endsWith("$$Lambda"))) {
-            val closureTargets = for (closureCallSiteMap <- cg.get(closure).toSeq;
+            if(closure.method.declaringClass.endsWith("$$Lambda"))) {
+            val closureTargets = for (closureCallSiteMap <- cg.get(closure.method).toSeq;
                                       closureTargets <- closureCallSiteMap.values;
                                       closureTarget <- closureTargets) yield (closureTarget)
 
@@ -174,7 +174,7 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[Method]]]
             .mapValues(callSiteMap =>
                 callSiteMap
                     .view
-                    .mapValues(targets => targets.filter(method => !method.declaringClass.endsWith("$$Lambda")))
+                    .mapValues(targets => targets.filter(target => !target.method.declaringClass.endsWith("$$Lambda")))
                     .filter((_,targets) => targets.nonEmpty)
                     .toMap
             )

@@ -31,7 +31,7 @@ trait JavaTestAdapter extends TestAdapter {
     def computeCallGraph(configuration: Configuration): CallGraph
     def computeCallGraphWithOnTheFlyIR(configuration: Configuration): CallGraph
 
-    def callGraphToJCG(configuration: Configuration, callGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+    def callGraphToJCG(configuration: Configuration, callGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
 
     override def warmup(algorithm: String, inputDirPath: String, adapterOptions: AdapterOptions): AnalysisResult =
         val mainClass = adapterOptions.getString("mainClass")
@@ -105,7 +105,7 @@ trait JavaTestAdapter extends TestAdapter {
 
         val profiler = AsyncProfiler.getInstance()
 
-        val configureJFR = outputDirectory.resolve(s"$testCase-configure-alloc.jfr")
+        val configureJFR = outputDirectory.resolve(s"$testCase-$irString-configure-alloc.jfr")
         val parseClassFilesAndGenerateIRJFR = outputDirectory.resolve(s"$testCase-$irString-generate-ir-alloc.jfr")
         val callGraphJFR = outputDirectory.resolve(s"$testCase-$irString-callgraph-alloc.jfr")
 

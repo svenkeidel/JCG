@@ -5,29 +5,37 @@ import java.io.{BufferedReader, Writer}
 import scala.collection.immutable.ArraySeq
 import scala.collection.{View, mutable}
 
+case class CallTarget(method: Method, info: String)
+given InfoReads: Reads[CallTarget] = Json.reads[CallTarget]
+given InfoWrites: Writes[CallTarget] = Json.writes[CallTarget]
+
+object CallTarget:
+    def apply(method:Method): CallTarget = CallTarget(method = method, info = "")
+
 /**
  * Representation of all Methods that are reachable in the represented call graph.
  *
  * @author Florian Kuebler
  */
-case class ReachableMethods(reachableMethods: Map[Method, Map[CallSite, Set[Method]]]) {
+case class ReachableMethods(reachableMethods: Map[Method, Map[CallSite, Set[CallTarget]]]) {
 
     def writeCsv(writer: Writer): Unit = {
-        writer.write("caller|line|pc|declared-target|target\n")
+        writer.write("caller|line|pc|declared-target|target|info\n")
         for((caller,callSites) <- reachableMethods.toIndexedSeq.sortBy(_._1);
             (callSite,targets) <- callSites.toIndexedSeq.sortBy(_._1);
-            target <- targets) {
+            CallTarget(target,info) <- targets) {
             writer.write(caller.toString + "|")
             writer.write(callSite.line + "|")
             writer.write(callSite.pc.iterator.mkString + "|")
             writer.write(callSite.declaredTarget.toString + "|")
-            writer.write(target.toString + "\n")
+            writer.write(target.toString + "|")
+            writer.write(info + "\n")
         }
     }
 
     def methods: Iterator[Method] = {
         val result: mutable.Set[Method] = mutable.Set.empty
-        for((caller,callSiteMap) <- reachableMethods; (callSite,targets) <- callSiteMap; target <- targets) {
+        for((caller,callSiteMap) <- reachableMethods; (callSite,targets) <- callSiteMap; CallTarget(target,_) <- targets) {
             result += caller
             result += target
         }
@@ -36,11 +44,11 @@ case class ReachableMethods(reachableMethods: Map[Method, Map[CallSite, Set[Meth
 
 
     def edges: Iterator[(Method, CallSite, Method)] =
-        for((caller,callSiteMap) <- reachableMethods.iterator; (callSite,targets) <- callSiteMap; target <- targets) yield (caller, callSite, target)
+        for((caller,callSiteMap) <- reachableMethods.iterator; (callSite,targets) <- callSiteMap; CallTarget(target,_) <- targets) yield (caller, callSite, target)
 }
 
 object ReachableMethods:
-    def apply(callGraph: mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]]): ReachableMethods =
+    def apply(callGraph: mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]): ReachableMethods =
         ReachableMethods(
             callGraph.view.mapValues(callSiteMap =>
                 callSiteMap.view.mapValues(targets => targets.toSet).toMap
@@ -51,11 +59,12 @@ object ReachableMethods:
         // Skip header
         reader.readLine()
 
-        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
         while {
             val csvLine = reader.readLine()
             if(csvLine != null) {
-                val Array(callerStr, lineStr, pcStr, declaredTargetStr, targetStr) = csvLine.split("\\|")
+                val Array(callerStr, lineStr, pcStr, declaredTargetStr, targetStr) = csvLine.split("\\|").take(5)
+                val info = csvLine.split("\\|").lift(5).getOrElse("")
                 val caller = Method.fromString(callerStr)
                 val line = lineStr.toInt
                 val pc = pcStr.toIntOption
@@ -69,7 +78,7 @@ object ReachableMethods:
                 )
                 val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
                 val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-                targets += target
+                targets.add(CallTarget(target, info))
                 true
             } else {
                 false

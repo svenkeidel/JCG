@@ -154,7 +154,7 @@ object DoopAdapter extends JavaTestAdapter {
         computeCallGraph(configuration)
     }
 
-    override def callGraphToJCG(configuration: Configuration, callGraph: DoopCallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] =
+    override def callGraphToJCG(configuration: Configuration, callGraph: DoopCallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]] =
         Using.Manager { use =>
             val methodInvocationCsv = use(Source.fromFile(callGraph.methodInvocationLinesCSV.toFile))
             val methodInvocationLines: Map[String, Int] =
@@ -165,7 +165,7 @@ object DoopAdapter extends JavaTestAdapter {
 
 
             val callGraphCsv = use(Source.fromFile(callGraph.callGraphCSV.toFile))
-            val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+            val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
 
             for (line <- callGraphCsv.getLines()) {
                 val Array(_, callerDeclaredTgtNumber, _, tgtStr) = line.split("\t")
@@ -200,7 +200,7 @@ object DoopAdapter extends JavaTestAdapter {
 
                     val currentCallsites = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
                     val targets = currentCallsites.getOrElseUpdate(callSite, mutable.Set.empty)
-                    targets += target
+                    targets += CallTarget(target)
                 } catch {
                     case e: Throwable ⇒ println(e)
                 }

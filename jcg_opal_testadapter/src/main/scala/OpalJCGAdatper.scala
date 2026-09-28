@@ -166,8 +166,8 @@ object OpalJCGAdatper extends JavaTestAdapter {
         val declaredMethods: DeclaredMethods = configuration.project.get(DeclaredMethodsKey)
         opalCallGraph
 
-    override def callGraphToJCG(configuration: Configuration, opalCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] =
-        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+    override def callGraphToJCG(configuration: Configuration, opalCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]] =
+        val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
 
         val specialMethods: Set[String] = Set("$string_concat$", "$newInstance$", "$newInstance$", "$object_methods$")
 
@@ -216,7 +216,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
             val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-            targets += target
+            targets += CallTarget(target)
         }
 
         callGraph

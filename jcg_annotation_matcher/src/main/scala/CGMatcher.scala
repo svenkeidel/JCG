@@ -111,7 +111,7 @@ object CGMatcher {
      * whether the prohibit call targets are not present in the computed call graph.
      */
     private def handleDirectCallAnnotations(
-        computedCallSites:     Map[CallSite,Set[Method]],
+        computedCallSites:     Map[CallSite,Set[CallTarget]],
         annotatedMethod:       Method,
         method:                br.Method,
         directCallAnnotations: Seq[Annotation],
@@ -130,7 +130,7 @@ object CGMatcher {
             } match {
                 case Some((computedCallSite,computedTargets)) ⇒
 
-                    val computedTargetClasses = computedTargets.map(_.declaringClass)
+                    val computedTargetClasses = computedTargets.map(callTarget => callTarget.method.declaringClass)
 
                     val resolvedTargetClasses = AnnotationHelper.getResolvedTargets(annotation)
                     for (annotatedTgtClass <- resolvedTargetClasses) {
@@ -167,7 +167,7 @@ object CGMatcher {
      * whether the prohibit call targets are not present in the computed call graph.
      */
     private def handleIndirectCallAnnotations(
-        reachableMethods:        Map[Method, Map[CallSite, Set[Method]]],
+        reachableMethods:        Map[Method, Map[CallSite, Set[CallTarget]]],
         source:                  br.Method,
         indirectCallAnnotations: Seq[Annotation],
         verbose:                 Boolean
@@ -203,7 +203,7 @@ object CGMatcher {
      * Is there a path in the call graph from the `source` to the `annotatedTarget`?
      */
     private def callsIndirectly(
-        reachableMethods: Map[Method, Map[CallSite, Set[Method]]],
+        reachableMethods: Map[Method, Map[CallSite, Set[CallTarget]]],
         source:           Method,
         annotatedTarget:  Method,
         verbose:          Boolean
@@ -217,15 +217,15 @@ object CGMatcher {
 
             val computedCallSites = reachableMethods.getOrElse(currentSource, Map.empty)
 
-            for (targets <- computedCallSites.values; tgt <- targets) {
-                if (tgt == annotatedTarget) {
+            for (targets <- computedCallSites.values; callTarget <- targets) {
+                if (callTarget.method == annotatedTarget) {
                     if (verbose) println(s"Found transitive call $source -> $annotatedTarget")
                     break(true)
                 }
 
-                if (!visited.contains(tgt)) {
-                    visited += tgt
-                    workset += tgt
+                if (!visited.contains(callTarget.method)) {
+                    visited += callTarget.method
+                    workset += callTarget.method
                 }
             }
         }

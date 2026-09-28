@@ -99,8 +99,8 @@ object TaieJCGAdapter extends JavaTestAdapter {
         World.get().getResult(CallGraphBuilder.ID)
 
 
-    override def callGraphToJCG(configuration: Configuration, taieCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[Method]]] = {
-        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[Method]]]
+    override def callGraphToJCG(configuration: Configuration, taieCallGraph: CallGraph): mutable.Map[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]] = {
+        val jcgCallGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
 
         for (edge <- taieCallGraph.edges().iterator().asScala) {
             val taieCallSite = edge.getCallSite
@@ -118,7 +118,7 @@ object TaieJCGAdapter extends JavaTestAdapter {
 
             val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-            targets += target
+            targets += CallTarget(target)
         }
 
         jcgCallGraph
