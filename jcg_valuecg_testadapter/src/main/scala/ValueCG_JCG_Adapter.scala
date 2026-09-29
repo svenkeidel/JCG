@@ -36,12 +36,19 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
         val jdkPath = adapterOptions.getPath("JDKPath")
         val analyzeJDK = adapterOptions.getBoolean("analyzeJDK")
         val target = adapterOptions.getString("target")
+        val onTheFlyIR = adapterOptions.getBoolean("onTheFlyIR")
 
-        configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
-            parseClassFilesAndGenerateIR(configuration)
-            val callGraph = computeCallGraph(configuration)
-            val timing = Time.fromNanoseconds(Files.readString(configuration.outDir.resolve("ValDroid-timing.txt")).toLong)
-            AnalysisResult.irGenerationAndCallGraphComputationTime(Time.zero, timing)
+        if(!onTheFlyIR) {
+            throw UnsupportedOperationException("ValueCG Does not support a-priori IR computation.")
+        } else {
+            configure(algorithm, target, mainClass, classPath, javaVersion, jdkPath, analyzeJDK) { configuration =>
+                parseClassFilesAndGenerateIR(configuration)
+                val callGraph = computeCallGraph(configuration)
+                val timing = Time.fromNanoseconds(Files.readString(configuration.outDir.resolve("ValDroid-timing.txt")).toLong)
+                AnalysisResult.Success(Json.obj(
+                    "callGraphComputationWithOnTheFlyIR" -> timing
+                ))
+            }
         }
 
 
