@@ -20,13 +20,13 @@ enum AnalysisResult:
 object AnalysisResult:
     def callGraphComputationTime(callGraphComputation: Time): AnalysisResult =
         AnalysisResult.Success(Json.obj(
-            "callGraphComputationTime" -> callGraphComputation
+            "callGraphComputationWithOnTheFlyIR" -> callGraphComputation
         ))
 
     def irGenerationAndCallGraphComputationTime(irGeneration: Time, callGraphComputation: Time): AnalysisResult =
         AnalysisResult.Success(Json.obj(
-            "irGenerationTime" -> irGeneration,
-            "callGraphComputationTime" -> callGraphComputation
+            "parseClassFilesAndGenerateIr" -> irGeneration,
+            "callGraphComputation" -> callGraphComputation
         ))
 
 
