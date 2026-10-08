@@ -9,7 +9,7 @@ import org.opalj.br.analyses.{DeclaredMethods, DeclaredMethodsKey, Project, Some
 import org.opalj.br.analyses.Project.JavaClassFileReader
 import org.opalj.br.fpcf.FPCFAnalysisScheduler
 import org.opalj.br.fpcf.analyses.pointsto.TamiFlexKey
-import org.opalj.fpcf.FPCFAnalysesManagerKey
+import org.opalj.fpcf.{FPCFAnalysesManagerKey, PropertyStore, PropertyStoreKey}
 import org.opalj.br.instructions.{INVOKEDYNAMIC, MethodInvocationInstruction}
 import org.opalj.tac.cg.{AllocationSiteBasedPointsToCallGraphKey, CFA_1_0_CallGraphKey, CFA_1_1_CallGraphKey, CHACallGraphKey, CTACallGraphKey, CallGraphKey, FTACallGraphKey, MTACallGraphKey, RTACallGraphKey, RemoveTacaiProvider, TypeBasedPointsToCallGraphKey, TypeIteratorKey, XTACallGraphKey}
 import org.opalj.tac.fpcf.analyses.cg.{CallGraphAnalysisScheduler, TypeIterator}
@@ -161,8 +161,10 @@ object OpalJCGAdatper extends JavaTestAdapter {
             Seq.empty
         )
 
+        implicit val ps: PropertyStore = configuration.project.get(PropertyStoreKey)
+
         val opalCallGraph = configuration.project.get(configuration.callGraphKey)
-        val typeIterator: TypeIterator = configuration.project.get(TypeIteratorKey)
+        implicit val typeIterator: TypeIterator = configuration.project.get(TypeIteratorKey)
         val declaredMethods: DeclaredMethods = configuration.project.get(DeclaredMethodsKey)
         opalCallGraph
 

@@ -109,7 +109,7 @@ object Commandline {
             try {
                 reportSize(tryAwait(options.timeout, future))
             } catch {
-                case _: TimeoutException => reportSize(AnalysisResult.Timeout(options.timeout.seconds.toNanos))
+                case _: TimeoutException => reportSize(AnalysisResult.Timeout(options.timeout.seconds))
                 case e: Throwable => reportSize(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n")))
             } finally {
                 System.gc()
@@ -172,7 +172,7 @@ object Commandline {
                 reportTiming(timings)
             } catch {
                 case _: TimeoutException =>
-                    reportTiming(Seq(AnalysisResult.Timeout(options.timeout.seconds.toNanos)))
+                    reportTiming(Seq(AnalysisResult.Timeout(options.timeout.seconds)))
                 case e: Throwable =>
                     reportTiming(Seq(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n"))))
             } finally {
@@ -232,7 +232,7 @@ object Commandline {
                 result = tryAwait(options.timeout, measurent)
                 reportMemory(result)
             } catch {
-                case _: TimeoutException => reportMemory(AnalysisResult.Timeout(options.timeout.seconds.toNanos))
+                case _: TimeoutException => reportMemory(AnalysisResult.Timeout(options.timeout.seconds))
                 case e: Throwable => reportMemory(AnalysisResult.Exception(e.getMessage + "\n" + e.getStackTrace.mkString("\n")))
             } finally {
                 System.gc()

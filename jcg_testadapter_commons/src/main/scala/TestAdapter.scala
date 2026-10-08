@@ -5,14 +5,14 @@ import scala.concurrent.duration.*
 
 enum AnalysisResult:
     case Success(result: JsValue)
-    case Timeout(timeout: Long)
+    case Timeout(timeout: FiniteDuration)
     case Exception(exception: String)
 
     override def toString: String = {
         this match {
             case Success(result) =>
                 Json.prettyPrint(result)
-            case Timeout(timeout) => s"Timeout after ${timeout.seconds.toMinutes}m"
+            case Timeout(timeout) => s"Timeout after ${timeout.toMinutes}m"
             case Exception(exc) => s"Exception in analysis:\n${exc}"
         }
     }
@@ -32,7 +32,9 @@ object AnalysisResult:
 
 given AnalysisResultWrites: Writes[AnalysisResult] = {
     case success: AnalysisResult.Success => Json.writes[AnalysisResult.Success].writes(success)
-    case timeout: AnalysisResult.Timeout => Json.writes[AnalysisResult.Timeout].writes(timeout)
+    case timeout: AnalysisResult.Timeout =>
+        given Writes[FiniteDuration] = finiteDuration => JsNumber(finiteDuration.toSeconds)
+        Json.writes[AnalysisResult.Timeout].writes(timeout)
     case exc: AnalysisResult.Exception => Json.writes[AnalysisResult.Exception].writes(exc)
 }
 
