@@ -60,15 +60,13 @@ object DynamicJCGAdapter extends TestAdapter {
         }
         val agentPath = Paths.get("jcg_dynamic_testadapter", "src", "main", "resources", "DynamicCG.so")
 
-        val callGraphPath = Files.createTempFile("callgraph", ".json.gz")
-        val crashLog = Files.createTempFile("crash", ".log")
+        val tempDir = Files.createDirectories(Paths.get("/tmp/dyncg"));
+        val callGraphPath = Files.createTempFile(tempDir, "callgraph", ".json.gz")
+        val crashLog = Files.createTempFile(tempDir, "crash", ".log")
 
         try {
             val agentArgs = Array(callGraphPath.toString).mkString(",")
             classPath :+= inputDirPath
-
-            val reachableMethods = mutable.Set[Method]()
-            val edges = mutable.Map[Method, mutable.Map[(Int, Int), mutable.Set[Method]]]()
 
             var args = List(javaPath.toAbsolutePath.toString)
             args :+= s"-Xmx${Runtime.getRuntime.maxMemory()}"
@@ -125,10 +123,11 @@ object DynamicJCGAdapter extends TestAdapter {
                     .jvmToJavaTypes
                     .deserialize
                     .toReachableMethods
-                reachableMethods.writeCsv(output)
-            }.get
 
-            AnalysisResult.callGraphComputationTime(callGraphComputation = after - before)
+                reachableMethods.writeCsv(output)
+
+                AnalysisResult.Success(Json.obj("methods" -> reachableMethods.methods.size, "edges" -> reachableMethods.edges.size))
+            }.get
         } catch {
             case exc: Throwable =>
                 exc.printStackTrace(System.err)
