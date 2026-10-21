@@ -194,7 +194,7 @@ object DoopAdapter extends JavaTestAdapter {
                     //                val declaredTarget = Method(declaringClass = declaredClass, name = declaredMethodName.drop(1), returnType = "<undefined>", parameterTypes = ArraySeq.empty)
                     val declaredTarget = Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
                     val line = methodInvocationLines.getOrElse(callerDeclaredTgtNumber, -1)
-                    val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = None)
+                    val callSite = CallSite(callType = CallType.Unclassified, declaredTarget = declaredTarget, line = line, pc = None)
 
                     val target = toMethod(tgtStr.slice(1, tgtStr.length - 1))
 

@@ -38,7 +38,9 @@ lazy val jcg_data_format = project.settings(
     libraryDependencies += "org.playframework" %% "play-json" % playJsonVersion,
     libraryDependencies += ("io.get-coursier" %% "coursier" % "2.1.8").cross(CrossVersion.for3Use2_13),
     libraryDependencies += ("io.get-coursier" %% "coursier-cache" % "2.1.8").cross(CrossVersion.for3Use2_13),
-    libraryDependencies += "com.fasterxml.jackson.module" %% "jackson-module-scala" % fasterXmlJacksonVersion
+    libraryDependencies += "com.fasterxml.jackson.module" %% "jackson-module-scala" % fasterXmlJacksonVersion,
+    libraryDependencies += "org.ow2.asm" % "asm" % "9.11.1",
+    libraryDependencies += "org.ow2.asm" % "asm-tree" % "9.11.1"
 )
 
 lazy val jcg_testcases = project.settings(
@@ -233,8 +235,6 @@ lazy val jcg_testadapter_commons = project.settings(
     assembly / aggregate := false,
     libraryDependencies += "tools.profiler" % "async-profiler" % "4.5",
     libraryDependencies += "org.openjdk.jmc" % "flightrecorder" % "9.1.2",
-//    libraryDependencies += "org.openjdk.jol" % "jol-core" % "0.17",
-//    libraryDependencies += "org.openjdk.jol" % "jol-cli" % "0.17",
     libraryDependencies += "com.lihaoyi" %% "upickle" % "3.1.0"
 ).dependsOn(jcg_data_format)
 
@@ -242,13 +242,8 @@ lazy val jcg_evaluation = project.settings(
     commonSettings,
     name := "JCG Evaluation",
     resolvers += Resolver.mavenLocal,
-//    libraryDependencies += "de.opal-project" %% "hermes" % opalVersion,
+    libraryDependencies += "org.apache.commons" % "commons-math3" % "3.6.1",
     publishArtifact := false,
-    Compile / packageOptions += Package.ManifestAttributes(
-        "Premain-Class" -> "org.openjdk.jol.vm.InstrumentationSupport",
-        "Launcher-Agent-Class" -> "org.openjdk.jol.vm.InstrumentationSupport$Installer"
-    ),
-
 ).dependsOn(
     jcg_testcases,
     jcg_data_format,

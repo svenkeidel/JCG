@@ -8,6 +8,7 @@ import pascal.taie.language.classes.JMethod
 import pascal.taie.analysis.AnalysisManager
 import org.apache.commons.io.FileUtils
 import pascal.taie.analysis.graph.callgraph
+import pascal.taie.ir.exp.{InvokeDynamic, InvokeInterface, InvokeSpecial, InvokeStatic, InvokeVirtual}
 
 import scala.collection.compat.immutable.ArraySeq
 import scala.collection.mutable
@@ -107,6 +108,13 @@ object TaieJCGAdapter extends JavaTestAdapter {
             val caller = taiToJCGMethod(taieCallGraph.getContainerOf(taieCallSite))
             val target = taiToJCGMethod(edge.getCallee)
 
+            val callType = taieCallSite.getInvokeExp match {
+                case _: InvokeVirtual => CallType.InvokeVirtual
+                case _: InvokeStatic => CallType.InvokeStatic
+                case _: InvokeSpecial => CallType.InvokeSpecial
+                case _: InvokeInterface => CallType.InvokeInterface
+                case _: InvokeDynamic => CallType.InvokeDynamic
+            }
             val methodRef = taieCallSite.getInvokeExp.getMethodRef
             val declaredTarget = Method(
                 declaringClass = methodRef.getDeclaringClass.toString,
@@ -114,7 +122,7 @@ object TaieJCGAdapter extends JavaTestAdapter {
                 returnType = methodRef.getReturnType.toString,
                 parameterTypes = methodRef.getParameterTypes.asScala.map(_.toString).to(ArraySeq)
             )
-            val callSite = CallSite(declaredTarget = declaredTarget, line = taieCallSite.getLineNumber, pc = None)
+            val callSite = CallSite(callType = callType, declaredTarget = declaredTarget, line = taieCallSite.getLineNumber, pc = None)
 
             val callSiteMap = jcgCallGraph.getOrElseUpdate(caller, mutable.Map.empty)
             val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)

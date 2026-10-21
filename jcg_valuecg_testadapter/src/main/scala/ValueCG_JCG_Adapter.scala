@@ -147,6 +147,14 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
                 val sourceMethod = parseMethodSignature(edge.sourceMethod).getOrElse(throw new RuntimeException(s"Cannot parse source method ${edge.sourceMethod}"))
                 val targetMethod = parseMethodSignature(edge.targetMethod).getOrElse(throw new RuntimeException(s"Cannot parse target method ${edge.targetMethod}"))
 
+                val callType = edge.kind match {
+                    case "VIRTUAL" => CallType.InvokeVirtual
+                    case "SPECIAL" => CallType.InvokeSpecial
+                    case "STATIC" => CallType.InvokeStatic
+                    case "INTERFACE" => CallType.InvokeInterface
+                    case "DYNAMIC" => CallType.InvokeDynamic
+                    case _ => CallType.Unclassified
+                }
                 val declaredTarget =
                     extractDeclaredSignature(edge.sourceStatement)
                         .flatMap(parseMethodSignature)
@@ -154,7 +162,7 @@ object ValueCG_JCG_Adapter extends JavaTestAdapter {
 
                 val lineNumber = if (edge.lineNumber != null) edge.lineNumber.toInt else -1
 
-                val callSite = CallSite(declaredTarget = declaredTarget, line = lineNumber, pc = None)
+                val callSite = CallSite(callType = callType, declaredTarget = declaredTarget, line = lineNumber, pc = None)
 
                 val callSiteMap = callGraph.getOrElseUpdate(sourceMethod, mutable.Map.empty)
                 val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)

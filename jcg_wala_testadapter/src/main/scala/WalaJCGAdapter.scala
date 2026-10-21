@@ -8,17 +8,15 @@ import com.ibm.wala.util.NullProgressMonitor
 import com.ibm.wala.core.util.config.AnalysisScopeReader
 import com.ibm.wala.ipa.callgraph.cha.CHACallGraph
 import com.ibm.wala.ipa.summaries.LambdaSummaryClass
-import com.ibm.wala.ssa.{SSAInvokeDynamicInstruction}
+import com.ibm.wala.shrike.shrikeBT.IInvokeInstruction
+import com.ibm.wala.ssa.SSAInvokeDynamicInstruction
 
 import java.io.File
 import java.io.PrintWriter
 import java.util
 import java.util.stream.Collectors
-
 import scala.jdk.CollectionConverters.*
 import scala.collection.mutable
-
-
 import java.nio.file.Path
 import scala.collection.immutable.ArraySeq
 
@@ -147,13 +145,19 @@ object WalaJCGAdapter extends JavaTestAdapter {
              callSiteWala <- callerWala.iterateCallSites().asScala;
              targetWala <- walaCallGraph.getPossibleTargets(callerWala, callSiteWala).asScala) {
 
+            val callType = callSiteWala.getInvocationCode match {
+                case IInvokeInstruction.Dispatch.VIRTUAL => CallType.InvokeVirtual
+                case IInvokeInstruction.Dispatch.STATIC => CallType.InvokeStatic
+                case IInvokeInstruction.Dispatch.SPECIAL => CallType.InvokeSpecial
+                case IInvokeInstruction.Dispatch.INTERFACE => CallType.InvokeInterface
+            }
             val declaredTarget = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, callSiteWala.getDeclaredTarget)
 
             val pc = callSiteWala.getProgramCounter
 
             val line = pc + 1
 
-            val callSite = CallSite(declaredTarget = declaredTarget, line = line, pc = Some(pc))
+            val callSite = CallSite(callType = callType, declaredTarget = declaredTarget, line = line, pc = Some(pc))
 
             val target = walaMethodToJCGMethod(walaCallGraph, bootstrapMethods, targetWala.getMethod.getReference)
 

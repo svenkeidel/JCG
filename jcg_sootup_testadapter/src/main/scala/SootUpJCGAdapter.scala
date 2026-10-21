@@ -9,6 +9,7 @@ import sootup.callgraph.ClassHierarchyAnalysisAlgorithm
 import sootup.callgraph.RapidTypeAnalysisAlgorithm
 import sootup.core.cache.provider.FullCacheProvider
 import sootup.core.inputlocation.AnalysisInputLocation
+import sootup.core.jimple.common.expr.{JDynamicInvokeExpr, JInterfaceInvokeExpr, JSpecialInvokeExpr, JStaticInvokeExpr, JVirtualInvokeExpr}
 import sootup.core.model.SourceType
 import sootup.core.signatures.MethodSignature
 import sootup.core.types.VoidType
@@ -101,15 +102,22 @@ object SootUpJCGAdapter extends JavaTestAdapter {
             val stmt = call.invokableStmt
 
             // e.g. null for finalize and no invoke for static initializers
-            val declaredTarget = if (stmt != null && stmt.getInvokeExpr.isPresent) {
-                sootMethodToJCGMethod(stmt.getInvokeExpr.get().getMethodSignature)
+            val (callType,declaredTarget) = if (stmt != null && stmt.getInvokeExpr.isPresent) {
+                (stmt.getInvokeExpr.get() match {
+                    case _: JVirtualInvokeExpr => CallType.InvokeVirtual
+                    case _: JStaticInvokeExpr => CallType.InvokeStatic
+                    case _: JInterfaceInvokeExpr => CallType.InvokeInterface
+                    case _: JSpecialInvokeExpr => CallType.InvokeSpecial
+                    case _: JDynamicInvokeExpr => CallType.InvokeDynamic
+                }, sootMethodToJCGMethod(stmt.getInvokeExpr.get().getMethodSignature))
             } else {
-                Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
+                (CallType.Unclassified, Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty))
             }
 
             val lineNumber = call.getLineNumber
 
             val callSite = CallSite(
+                callType,
                 declaredTarget = declaredTarget,
                 line = lineNumber,
                 pc = None

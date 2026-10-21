@@ -10,7 +10,7 @@ import org.opalj.br.analyses.Project.JavaClassFileReader
 import org.opalj.br.fpcf.FPCFAnalysisScheduler
 import org.opalj.br.fpcf.analyses.pointsto.TamiFlexKey
 import org.opalj.fpcf.{FPCFAnalysesManagerKey, PropertyStore, PropertyStoreKey}
-import org.opalj.br.instructions.{INVOKEDYNAMIC, MethodInvocationInstruction}
+import org.opalj.br.instructions.{INVOKEDYNAMIC, INVOKESTATIC, INVOKEVIRTUAL, INVOKESPECIAL, INVOKEINTERFACE, MethodInvocationInstruction}
 import org.opalj.tac.cg.{AllocationSiteBasedPointsToCallGraphKey, CFA_1_0_CallGraphKey, CFA_1_1_CallGraphKey, CHACallGraphKey, CTACallGraphKey, CallGraphKey, FTACallGraphKey, MTACallGraphKey, RTACallGraphKey, RemoveTacaiProvider, TypeBasedPointsToCallGraphKey, TypeIteratorKey, XTACallGraphKey}
 import org.opalj.tac.fpcf.analyses.cg.{CallGraphAnalysisScheduler, TypeIterator}
 import org.opalj.si.ProjectInformationKeys
@@ -183,24 +183,35 @@ object OpalJCGAdatper extends JavaTestAdapter {
 
             val target = opalMethodToJCGMethod(tgt.method)
 
-            val defaultDeclaredTarget = Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty)
-            val declaredTarget = try {
+            val defaultDeclaredTarget = (CallType.Unclassified, Method(declaringClass = "", name = "", returnType = "", parameterTypes = ArraySeq.empty))
+            val (callType,declaredTarget) = try {
                 tgt.method.definedMethod.body match {
                     case Some(body) => body.instructions.lift(pc) match {
                         case Some(INVOKEDYNAMIC(_, name, desc)) =>
-                            Method(
-                                declaringClass = "<invokedynamic>",
-                                name = name,
-                                returnType = convertTypeName(desc.returnType),
-                                parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](convertTypeName))
+                            (
+                                CallType.InvokeDynamic,
+                                Method(
+                                    declaringClass = "<invokedynamic>",
+                                    name = name,
+                                    returnType = convertTypeName(desc.returnType),
+                                    parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](convertTypeName))
+                                )
                             )
 
-                        case Some(MethodInvocationInstruction(dc, _, name, desc)) if specialMethods.forall(specialMethod => !name.startsWith(specialMethod)) =>
-                            Method(
-                                declaringClass = convertTypeName(dc),
-                                name = name,
-                                returnType = convertTypeName(desc.returnType),
-                                parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](convertTypeName))
+                        case Some(invoke@MethodInvocationInstruction(dc, _, name, desc)) if specialMethods.forall(specialMethod => !name.startsWith(specialMethod)) =>
+                            (
+                                invoke match {
+                                    case _: INVOKESTATIC => CallType.InvokeStatic
+                                    case _: INVOKEVIRTUAL => CallType.InvokeVirtual
+                                    case _: INVOKEINTERFACE => CallType.InvokeInterface
+                                    case _: INVOKESPECIAL => CallType.InvokeSpecial
+                                },
+                                Method(
+                                    declaringClass = convertTypeName(dc),
+                                    name = name,
+                                    returnType = convertTypeName(desc.returnType),
+                                    parameterTypes = ArraySeq.from(desc.parameterTypes.iterator.map[String](convertTypeName))
+                                )
                             )
                         case _ => defaultDeclaredTarget
                     }
@@ -211,6 +222,7 @@ object OpalJCGAdatper extends JavaTestAdapter {
             }
 
             val callSite = CallSite(
+                callType = callType,
                 declaredTarget = declaredTarget,
                 line = pc + 1,
                 pc = Some(pc)

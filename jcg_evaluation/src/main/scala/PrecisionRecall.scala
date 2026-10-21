@@ -1,52 +1,59 @@
-import play.api.libs.json.{Json, Reads, Writes, __}
+import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
+import org.apache.commons.math3.stat.descriptive.moment.Mean
+import org.apache.commons.math3.stat.descriptive.rank.Percentile
+import org.apache.commons.math3.stat.descriptive.summary.Sum
+import play.api.libs.json.{JsObject, JsString, JsValue, Json, Reads, Writes, __}
 
 import java.io.{File, FileInputStream}
 import java.nio.file.{Path, Paths}
 import java.util
 import java.util.HashSet as JHashSet
 import scala.collection.compat.immutable.ArraySeq
+import scala.collection.immutable.IntMap
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
 import scala.math.*
 import scala.util.matching.Regex
 
 class Classification[X](
-    actualPositive: Set[X],
-    predictedPositive: Set[X]
+    val actualPositive: Set[X],
+    val predictedPositive: Set[X]
 ):
     val truePositive: Set[X] = predictedPositive.intersect(actualPositive)
     val falsePositive: Set[X] = predictedPositive -- actualPositive
     val falseNegative: Set[X] = actualPositive -- predictedPositive
 
-    val precision: BigDecimal =
+    val precision: Double =
         if(predictedPositive.isEmpty)
-            if(actualPositive.isEmpty) 1 else 0
+            Double.NaN
         else
-            BigDecimal(truePositive.size) / BigDecimal(predictedPositive.size)
+            (BigDecimal(truePositive.size) / BigDecimal(predictedPositive.size)).toDouble
 
-    val recall: BigDecimal =
+    val recall: Double =
         if (actualPositive.isEmpty)
-            1
+            Double.NaN
         else
-            BigDecimal(truePositive.size) / BigDecimal(actualPositive.size)
+            (BigDecimal(truePositive.size) / BigDecimal(actualPositive.size)).toDouble
 
-    val f1Score: BigDecimal = harmonicMean(precision, recall)
+    val f1Score: Double =
+        harmonicMean(precision,recall)
 
-    private def harmonicMean(x: BigDecimal, y: BigDecimal): BigDecimal = {
-        if (x == 0 && y == 0)
-            0
-        else
-            (2 * x * y) / (x + y)
-    }
+private def harmonicMean(x: Double, y: Double): Double = {
+    if (x == 0 && y == 0)
+        0
+    else
+        (2 * x * y) / (x + y)
+}
 
-case class EdgeClassification(actualPositive: Set[Edge], predictedPositive: Set[Edge], methods: Classification[Method], computeFalsePositiveClosureSize: Boolean, computeFalseNegativeClosureSize: Boolean) extends Classification[Edge](actualPositive, predictedPositive):
-    val falsePositiveGraph: Map[Method, Set[Edge]] = falsePositive.map(edge => edge.target -> Set.empty[Edge]).toMap ++ falsePositive.groupBy(edge => edge.caller)
-    val falseNegativeGraph: Map[Method, Set[Edge]] = falseNegative.map(edge => edge.target -> Set.empty[Edge]).toMap ++ falseNegative.groupBy(edge => edge.caller)
-    
-    val falsePositiveClosure: Map[Method, TransitiveClosureSize] =
+case class EdgeClassification(actualPositiveEdges: Set[Edge], predictedPositiveEdges: Set[Edge], methods: Classification[Method], computeFalsePositiveClosureSize: Boolean, computeFalseNegativeClosureSize: Boolean) extends Classification[Edge](actualPositiveEdges, predictedPositiveEdges):
+
+    val falsePositiveClosure: Map[Method, TransitiveClosureSize] = {
+        val falsePositiveGraph: Map[Method, Set[Edge]] = falsePositive.map(edge => edge.target -> Set.empty[Edge]).toMap ++ falsePositive.groupBy(edge => edge.caller)
         if(computeFalsePositiveClosureSize) purdomTransitiveClosure(falsePositiveGraph)
         else Map.empty
+    }
     val falseNegativeClosure: Map[Method, TransitiveClosureSize] = {
+        val falseNegativeGraph: Map[Method, Set[Edge]] = falseNegative.map(edge => edge.target -> Set.empty[Edge]).toMap ++ falseNegative.groupBy(edge => edge.caller)
         if(computeFalseNegativeClosureSize) purdomTransitiveClosure(falseNegativeGraph)
         else Map.empty
     }
@@ -63,25 +70,79 @@ case class EdgeClassification(actualPositive: Set[Edge], predictedPositive: Set[
           .map(edge => edge -> falseNegativeClosure.getOrElse(edge.target, TransitiveClosureSize(methods = -1, edges = -1)))
           .toMap
 
-//    private def transitiveClosure(startEdge: Edge, callGraph: Map[Method, Set[Edge]], relevantMethods: Set[Method]): TransitiveClosureSize =
-//        val worklist = mutable.Queue(startEdge)
-//        val transitiveClosureEdges = mutable.HashSet[Edge]()
-//        val transitiveClosureMethods = mutable.HashSet[Method]()
-//        while (worklist.nonEmpty) {
-//            val edge = worklist.removeHead()
-//            if (!transitiveClosureEdges.contains(edge)) {
-//                transitiveClosureEdges += edge
-//
-//                if (!transitiveClosureMethods.contains(edge.target) && relevantMethods.contains(edge.target)) {
-//                    transitiveClosureMethods += edge.target
-//
-//                    worklist ++= callGraph.getOrElse(edge.target, Set.empty).diff(transitiveClosureEdges)
-//                }
-//            }
-//        }
-//        TransitiveClosureSize(methods = transitiveClosureMethods.size, edges = transitiveClosureEdges.size)
+case class AveragePerCallType(calls: Map[Method,IntMap[Call]], actualPositive: Set[Edge], predictedPositive: Set[Edge]):
+    val classificationPerCallsite: Map[(Method,Int), Classification[Method]] = {
+        val actualTargetsPerCallsite: Map[(Method, Int), Set[Method]] =
+            actualPositive.groupBy(edge => (edge.caller, edge.line.getOrElse(-1)))
+                          .view.mapValues(edges => edges.map(_.target)).toMap
 
-def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[CallTarget]]],
+        val predictedTargetsPerCallsite: Map[(Method, Int), Set[Method]] =
+            predictedPositive.groupBy(edge => (edge.caller, edge.line.getOrElse(-1)))
+                             .view.mapValues(edges => edges.map(_.target)).toMap
+
+        val allCallSites: Set[(Method, Int)] = actualTargetsPerCallsite.keySet ++ predictedTargetsPerCallsite.keySet
+
+        (for(callSite <- allCallSites.iterator)
+            yield(callSite -> Classification[Method](
+                actualPositive = actualTargetsPerCallsite.getOrElse(callSite, Set.empty),
+                predictedPositive = predictedTargetsPerCallsite.getOrElse(callSite, Set.empty)
+            ))).toMap
+    }
+
+    val precisionPerCallType: mutable.Map[CallType,mutable.ArrayBuffer[Double]] = mutable.Map.empty
+    val recallPerCallType: mutable.Map[CallType,mutable.ArrayBuffer[Double]] = mutable.Map.empty
+    val truePositivePerCallType: mutable.Map[CallType,mutable.ArrayBuffer[Double]] = mutable.Map.empty
+    val falsePositivePerCallType: mutable.Map[CallType,mutable.ArrayBuffer[Double]] = mutable.Map.empty
+    val falseNegativePerCallType: mutable.Map[CallType, mutable.ArrayBuffer[Double]] = mutable.Map.empty
+    val numCallSitesPredicted: mutable.Map[CallType,Long] = mutable.Map.empty
+    val numCallSitesActual: mutable.Map[CallType,Long] = mutable.Map.empty
+
+    for(((method,line),classification) <- classificationPerCallsite) {
+        val callType = calls.get(method).flatMap(callSites => callSites.get(line).map(_.callType)).getOrElse(CallType.Unclassified)
+        precisionPerCallType.getOrElseUpdate(callType, new mutable.ArrayBuffer) += classification.precision
+        recallPerCallType.getOrElseUpdate(callType, new mutable.ArrayBuffer) += classification.recall
+        truePositivePerCallType.getOrElseUpdate(callType, new mutable.ArrayBuffer) += classification.truePositive.size
+        falsePositivePerCallType.getOrElseUpdate(callType, new mutable.ArrayBuffer) += classification.falsePositive.size
+        falseNegativePerCallType.getOrElseUpdate(callType, new mutable.ArrayBuffer) += classification.falseNegative.size
+        numCallSitesActual += callType -> (numCallSitesActual.getOrElse(callType,0l) + (if(classification.actualPositive.isEmpty) 0l else 1l))
+        numCallSitesPredicted += callType -> (numCallSitesPredicted.getOrElse(callType,0l) + (if(classification.predictedPositive.isEmpty) 0l else 1l))
+    }
+
+    def toJson: JsValue = {
+        val callTypes = precisionPerCallType.keySet
+        JsObject(callTypes.toSeq.map(callType => {
+            val precision = getMeanOrZero(precisionPerCallType(callType).toArray)
+            val recall = getMeanOrZero(recallPerCallType(callType).toArray)
+            callType.toString.toLowerCase -> Json.obj(
+                "precision" -> precision,
+                "recall" -> recall,
+                "f1-score" -> harmonicMean(precision, recall),
+                "true_positive" -> getSumOrZero(truePositivePerCallType(callType).toArray),
+                "false_positive" -> getSumOrZero(falsePositivePerCallType(callType).toArray),
+                "false_negative" -> getSumOrZero(falseNegativePerCallType(callType).toArray),
+                "num_callsites_actual" -> numCallSitesActual(callType),
+                "num_callsites_predicted" -> numCallSitesPredicted(callType)
+            )
+        }))
+    }
+
+    private def getMeanOrZero(values: Array[Double]): Double =
+        val mean = new Mean().evaluate(values.filter(d => !d.isNaN))
+        if(mean.isNaN)
+            0.0d
+        else
+            mean
+
+    private def getSumOrZero(values: Array[Double]): Double =
+        val sum = new Sum().evaluate(values.filter(d => !d.isNaN))
+        if (sum.isNaN)
+            0.0d
+        else
+            sum
+
+
+def PrecisionRecallJava(calls: Map[Method,IntMap[Call]],
+                        actualCallGraph: Map[Method, Map[CallSite, Set[CallTarget]]],
                         predictedCallGraph: Map[Method, Map[CallSite, Set[CallTarget]]],
                         packageScope: Regex,
                         reachableMethodsInclude: Regex,
@@ -188,6 +249,7 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[CallTarge
     val predictedCallGraphWithoutClosures = removeCallsToDynamicallyGeneratedClosureClasses(predictedCallGraph)
 
     PrecisionRecall(
+        calls = calls,
         actualCallGraph = PrecisionRecallCallGraph(
             methods = filterMethods(actualCallGraphWithoutClosures),
             edges = filterEdges(actualCallGraphWithoutClosures)
@@ -201,6 +263,7 @@ def PrecisionRecallJava(actualCallGraph: Map[Method, Map[CallSite, Set[CallTarge
     )
 
 case class PrecisionRecall(
+      calls: Map[Method,IntMap[Call]],
       actualCallGraph: PrecisionRecallCallGraph,
       predictedCallGraph: PrecisionRecallCallGraph,
       computeFalsePositiveClosureSize: Boolean,
@@ -225,6 +288,12 @@ case class PrecisionRecall(
         predictedCallGraph.edges,
         methods,
         computeFalsePositiveClosureSize, computeFalseNegativeClosureSize
+    )
+
+    val averagePerCallType: AveragePerCallType = AveragePerCallType(
+        calls,
+        actualCallGraph.edges,
+        predictedCallGraph.edges
     )
 
 case class PrecisionRecallCallGraph(methods: Set[Method], edges: Set[Edge])

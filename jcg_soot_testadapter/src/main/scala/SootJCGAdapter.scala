@@ -5,6 +5,7 @@ import soot.G
 import soot.PackManager
 import soot.Scene
 import soot.SootMethod
+import soot.jimple.{DynamicInvokeExpr, InterfaceInvokeExpr, SpecialInvokeExpr, StaticInvokeExpr, VirtualInvokeExpr}
 import soot.options.Options
 
 import java.nio.file.Path
@@ -130,10 +131,17 @@ object SootJCGAdapter extends JavaTestAdapter {
             val stmt = edge.srcStmt()
 
             // e.g. null for finalize and no invoke for static initializers
-            val declaredTarget = if (stmt != null && stmt.containsInvokeExpr())
-                stmt.getInvokeExpr.getMethod
+            val (callType,declaredTarget) = if (stmt != null && stmt.containsInvokeExpr())
+                (stmt.getInvokeExpr match {
+                    case _: VirtualInvokeExpr => CallType.InvokeVirtual
+                    case _: StaticInvokeExpr => CallType.InvokeStatic
+                    case _: InterfaceInvokeExpr => CallType.InvokeInterface
+                    case _: SpecialInvokeExpr => CallType.InvokeSpecial
+                    case _: DynamicInvokeExpr => CallType.InvokeDynamic
+                },
+                stmt.getInvokeExpr.getMethod)
             else
-                edge.tgt()
+                (CallType.Unclassified,edge.tgt())
 
             val lineNumber =
                 if (stmt != null)
@@ -142,6 +150,7 @@ object SootJCGAdapter extends JavaTestAdapter {
                     -1
 
             val callSite = CallSite(
+                callType,
                 declaredTarget = sootMethodToJCGMethod(declaredTarget),
                 line = lineNumber,
                 pc = None

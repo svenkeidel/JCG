@@ -65,7 +65,7 @@ object Commandline {
                         case Action.MeasureMemory => measureMemory(options, jreLocations, projectSpec, adapter, cgAlgo, outputDirectory, testCase, teeOutputStream)
                         case Action.Assess => assessCallGraph(options, jreLocations, projectSpec, outputDirectory, testCase)
                         case Action.Size => computeCallGraphSize(options, outputDirectory, testCase)
-                        case Action.PrecisionRecall => computePrecisionRecall(options, projectSpec, outputDirectory, testCase)
+                        case Action.PrecisionRecall => computePrecisionRecall(options, jreLocations, projectSpec, outputDirectory, testCase)
                         case Action.ConvertDynamicCallGraphToCSV => convertDynamicCallGraphToCSV(options, jreLocations, projectSpec, outputDirectory, testCase)
                         case Action.DynamicStackTraces => dynamicStackTraces(options, outputDirectory, testCase)
                 }
@@ -250,7 +250,7 @@ object Commandline {
     private def convertDynamicCallGraphToCSV(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphsDirectory: Path, testCase: String): Unit = {
         val dynamicCallGraphJSONPath = callGraphsDirectory.resolve(s"$testCase-callgraph.json.gz")
         val dynamicCallGraphSerialized = Util.readJSON(dynamicCallGraphJSONPath).validate[DynamicJCGAdapter.CallGraphSerialized].get
-        val classPath = projectSpec.allClassPathEntryPaths(options.projectsDir.toFile).map(Paths.get(_).toFile)
+        val classPath = projectSpec.allClassPathEntryPaths(options.projectsDir.toFile).map(Paths.get(_))
         val jdkPath = jreLocations(projectSpec.java)
         val updatedCallGraph = dynamicCallGraphSerialized.addDeclaredTargetsToCallSites(classPath, jdkPath).jvmToJavaTypes
 
@@ -405,7 +405,7 @@ object Commandline {
         )
     }
 
-    def computePrecisionRecall(options: CommandlineOptions, projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
+    def computePrecisionRecall(options: CommandlineOptions, jreLocations: Map[Int, Path], projectSpec: ProjectSpecification, callGraphDirectory: Path, testCase: String): Unit = {
         try {
             val predictedCallGraphPath = Util.findCallGraphFile(callGraphDirectory, testCase)
 
@@ -417,7 +417,12 @@ object Commandline {
             val predictedCallGraph = try { Util.readReachableMethods(predictedCallGraphPath) } catch { case exc: Exception => throw new RuntimeException(s"Error while parsing static call graph $predictedCallGraphPath", exc) }
             val truthCallGraph = try { Util.readReachableMethods(truthCallGraphPath) } catch { case exc: Exception => throw new RuntimeException(s"Error while parsing dynamic call graph $truthCallGraphPath", exc) }
 
+            val classPath = projectSpec.allClassPathEntryPaths(options.projectsDir.toFile).map(Paths.get(_))
+            val jdkPath = jreLocations(projectSpec.java)
+            val calls = ParseCalls(classPath :+ jdkPath)
+
             val precisionRecall = PrecisionRecallJava(
+                calls = calls,
                 actualCallGraph = truthCallGraph.reachableMethods,
                 predictedCallGraph = predictedCallGraph.reachableMethods,
                 packageScope = options.comparisonScope match
@@ -464,7 +469,8 @@ object Commandline {
                                 "true_positive" -> precisionRecall.edgesWithCallSiteLineNumbers.truePositive.size,
                                 "false_positive" -> precisionRecall.edgesWithCallSiteLineNumbers.falsePositive.size,
                                 "false_negative" -> precisionRecall.edgesWithCallSiteLineNumbers.falseNegative.size
-                            )
+                            ),
+                        "average-edges-per-callsite" -> precisionRecall.averagePerCallType.toJson
                     )
                 ).getBytes(StandardCharsets.UTF_8)
             )
