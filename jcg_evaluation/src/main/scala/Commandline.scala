@@ -1,9 +1,10 @@
 import java.io.*
 import java.nio.file.*
 import java.util.zip.GZIPOutputStream
-import play.api.libs.json.{JsNull, JsNumber, JsValue, Json, Writes, __}
+import play.api.libs.json.{JsNull, JsNumber, JsObject, JsValue, Json, Writes, __}
 
 import java.nio.charset.StandardCharsets
+import scala.collection.immutable.SortedMap
 import scala.concurrent.Future
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -442,7 +443,7 @@ object Commandline {
             Files.write(
                 outputPath,
                 Json.prettyPrint(
-                    Json.obj(
+                    JsObject(SortedMap(
                         "methods" ->
                             Json.obj(
                                 "precision" -> precisionRecall.methods.precision,
@@ -470,8 +471,7 @@ object Commandline {
                                 "false_positive" -> precisionRecall.edgesWithCallSiteLineNumbers.falsePositive.size,
                                 "false_negative" -> precisionRecall.edgesWithCallSiteLineNumbers.falseNegative.size
                             ),
-                        "average-edges-per-callsite" -> precisionRecall.averagePerCallType.toJson
-                    )
+                    ) ++ precisionRecall.averagePerCallType.toJson)
                 ).getBytes(StandardCharsets.UTF_8)
             )
 

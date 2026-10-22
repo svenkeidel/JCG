@@ -108,12 +108,12 @@ case class AveragePerCallType(calls: Map[Method,IntMap[Call]], actualPositive: S
         numCallSitesPredicted += callType -> (numCallSitesPredicted.getOrElse(callType,0l) + (if(classification.predictedPositive.isEmpty) 0l else 1l))
     }
 
-    def toJson: JsValue = {
+    def toJson: Map[String,JsValue] = {
         val callTypes = precisionPerCallType.keySet
-        JsObject(callTypes.toSeq.map(callType => {
+        callTypes.toSeq.map(callType => {
             val precision = getMeanOrZero(precisionPerCallType(callType).toArray)
             val recall = getMeanOrZero(recallPerCallType(callType).toArray)
-            callType.toString.toLowerCase -> Json.obj(
+            "average-"+callType.toString.toLowerCase -> Json.obj(
                 "precision" -> precision,
                 "recall" -> recall,
                 "f1-score" -> harmonicMean(precision, recall),
@@ -123,7 +123,7 @@ case class AveragePerCallType(calls: Map[Method,IntMap[Call]], actualPositive: S
                 "num_callsites_actual" -> numCallSitesActual(callType),
                 "num_callsites_predicted" -> numCallSitesPredicted(callType)
             )
-        }))
+        }).toMap
     }
 
     private def getMeanOrZero(values: Array[Double]): Double =
