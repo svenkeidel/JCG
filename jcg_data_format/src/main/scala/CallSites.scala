@@ -66,41 +66,45 @@ object ReachableMethods:
         )
 
     def readCsv(reader: BufferedReader): ReachableMethods = {
-        // Skip header
-        val header = reader.readLine().split("\\|")
-
         val callGraph = mutable.Map.empty[Method, mutable.Map[CallSite, mutable.Set[CallTarget]]]
-        while {
-            val csvLine = reader.readLine()
-            if(csvLine != null) {
-                val csvMap = header.zip(csvLine.split("\\|")).toMap
 
-                val caller = Method.fromString(csvMap("caller"))
-                val line = csvMap("line").toInt
-                val pc = csvMap("pc").toIntOption
-                val callType = CallType(csvMap.getOrElse("call-type", ""))
-                val declaredTarget = try {
-                    Method.fromString(csvMap("declared-target"))
-                } catch {
-                    case _: Throwable => Method(name = "", declaringClass = "", returnType = "", parameterTypes = ArraySeq.empty)
+        // Skip header
+        val headerLine = reader.readLine()
+        if(headerLine != null) {
+            val header = headerLine.split("\\|")
+
+            while {
+                val csvLine = reader.readLine()
+                if (csvLine != null) {
+                    val csvMap = header.zip(csvLine.split("\\|")).toMap
+
+                    val caller = Method.fromString(csvMap("caller"))
+                    val line = csvMap("line").toInt
+                    val pc = csvMap("pc").toIntOption
+                    val callType = CallType(csvMap.getOrElse("call-type", ""))
+                    val declaredTarget = try {
+                        Method.fromString(csvMap("declared-target"))
+                    } catch {
+                        case _: Throwable => Method(name = "", declaringClass = "", returnType = "", parameterTypes = ArraySeq.empty)
+                    }
+                    val target = Method.fromString(csvMap("target"))
+                    val info = csvMap.getOrElse("info", "")
+
+                    val callSite = CallSite(
+                        callType,
+                        declaredTarget = declaredTarget,
+                        line = line,
+                        pc = pc
+                    )
+                    val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
+                    val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
+                    targets.add(CallTarget(target, info))
+                    true
+                } else {
+                    false
                 }
-                val target = Method.fromString(csvMap("target"))
-                val info = csvMap.getOrElse("info", "")
-
-                val callSite = CallSite(
-                    callType,
-                    declaredTarget = declaredTarget,
-                    line = line,
-                    pc = pc
-                )
-                val callSiteMap = callGraph.getOrElseUpdate(caller, mutable.Map.empty)
-                val targets = callSiteMap.getOrElseUpdate(callSite, mutable.Set.empty)
-                targets.add(CallTarget(target, info))
-                true
-            } else {
-                false
-            }
-        } do ()
+            } do ()
+        }
 
         ReachableMethods(callGraph)
     }
@@ -145,7 +149,7 @@ object Method {
             try {
                 val Array(declaringClassStr, returnType, methodDescriptor) = string.split(' ')
                 val declaringClass = declaringClassStr.stripSuffix(":")
-                val Array(name, parameterTypes) = methodDescriptor.split('(')
+                val Array(name, parameterTypes) = methodDescriptor.split("\\(", 2)
                 val paramTypes = parameterTypes.stripSuffix(")").split(",")
                 Method(
                     declaringClass = declaringClass,
@@ -154,7 +158,7 @@ object Method {
                     parameterTypes = if (paramTypes.length == 1 && paramTypes(0) == "") ArraySeq.empty else ArraySeq.unsafeWrapArray(paramTypes)
                 )
             } catch {
-                case error: MatchError => throw new RuntimeException(s"Error while parsing method signature $string")
+                case throwable: Throwable => throw new RuntimeException(s"Error while parsing method signature $string", throwable)
             }
         }
 }

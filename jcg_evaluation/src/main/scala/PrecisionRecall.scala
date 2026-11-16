@@ -23,15 +23,15 @@ class Classification[X](
     val falsePositive: Set[X] = predictedPositive -- actualPositive
     val falseNegative: Set[X] = actualPositive -- predictedPositive
 
-    val precision: Double =
+    def precision: Double =
         if(predictedPositive.isEmpty)
-            Double.NaN
+            if(actualPositive.isEmpty) 1.0d else 0.0d
         else
             (BigDecimal(truePositive.size) / BigDecimal(predictedPositive.size)).toDouble
 
-    val recall: Double =
+    def recall: Double =
         if (actualPositive.isEmpty)
-            Double.NaN
+            1.0d
         else
             (BigDecimal(truePositive.size) / BigDecimal(actualPositive.size)).toDouble
 
@@ -44,6 +44,20 @@ private def harmonicMean(x: Double, y: Double): Double = {
     else
         (2 * x * y) / (x + y)
 }
+
+class AverageingClassification[X](override val actualPositive: Set[X], override val predictedPositive: Set[X]) extends Classification[X](actualPositive, predictedPositive):
+    override def precision: Double =
+        if (predictedPositive.isEmpty)
+            Double.NaN
+        else
+            (BigDecimal(truePositive.size) / BigDecimal(predictedPositive.size)).toDouble
+
+    override def recall: Double =
+        if (actualPositive.isEmpty)
+            Double.NaN
+        else
+            (BigDecimal(truePositive.size) / BigDecimal(actualPositive.size)).toDouble
+
 
 case class EdgeClassification(actualPositiveEdges: Set[Edge], predictedPositiveEdges: Set[Edge], methods: Classification[Method], computeFalsePositiveClosureSize: Boolean, computeFalseNegativeClosureSize: Boolean) extends Classification[Edge](actualPositiveEdges, predictedPositiveEdges):
 
@@ -71,7 +85,7 @@ case class EdgeClassification(actualPositiveEdges: Set[Edge], predictedPositiveE
           .toMap
 
 case class AveragePerCallType(calls: Map[Method,IntMap[Call]], actualPositive: Set[Edge], predictedPositive: Set[Edge]):
-    val classificationPerCallsite: Map[(Method,Int), Classification[Method]] = {
+    val classificationPerCallsite: Map[(Method,Int), AverageingClassification[Method]] = {
         val actualTargetsPerCallsite: Map[(Method, Int), Set[Method]] =
             actualPositive.groupBy(edge => (edge.caller, edge.line.getOrElse(-1)))
                           .view.mapValues(edges => edges.map(_.target)).toMap
@@ -83,7 +97,7 @@ case class AveragePerCallType(calls: Map[Method,IntMap[Call]], actualPositive: S
         val allCallSites: Set[(Method, Int)] = actualTargetsPerCallsite.keySet ++ predictedTargetsPerCallsite.keySet
 
         (for(callSite <- allCallSites.iterator)
-            yield(callSite -> Classification[Method](
+            yield(callSite -> AverageingClassification[Method](
                 actualPositive = actualTargetsPerCallsite.getOrElse(callSite, Set.empty),
                 predictedPositive = predictedTargetsPerCallsite.getOrElse(callSite, Set.empty)
             ))).toMap
